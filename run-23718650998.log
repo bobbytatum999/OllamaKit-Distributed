@@ -1,0 +1,19 @@
+build	Verify Agent Workspace Seed	﻿2026-03-29T21:36:24.7434350Z ##[group]Run set -eo pipefail
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.7434980Z [36;1mset -eo pipefail[0m
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.7435270Z [36;1mpython3 Scripts/generate-agent-workspace-seed.py --check[0m
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8898020Z shell: /bin/bash -e {0}
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8898370Z env:
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8898580Z   XCODE_MAJOR: 26
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8898890Z   IOS_DEPLOYMENT_TARGET: 26.0
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8899150Z   LLAMA_CPP_TAG: b8548
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8899490Z   CONFIGURATION: Release
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8901810Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8902390Z   DEVELOPER_DIR: /Applications/Xcode_26.4_Release_Candidate.app/Contents/Developer
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8902860Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.13.12/arm64
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8903380Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.13.12/arm64/lib/pkgconfig
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8904120Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.13.12/arm64
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8904520Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.13.12/arm64
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8905150Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.13.12/arm64
+build	Verify Agent Workspace Seed	2026-03-29T21:36:24.8905530Z ##[endgroup]
+build	Verify Agent Workspace Seed	2026-03-29T21:36:32.8384630Z Agent workspace seed is out of date: /Users/runner/work/OllamaKit/OllamaKit/Sources/OllamaKit/Services/GeneratedAgentWorkspaceSeed.swift
+build	Verify Agent Workspace Seed	2026-03-29T21:36:32.8442250Z ##[error]Process completed with exit code 1.

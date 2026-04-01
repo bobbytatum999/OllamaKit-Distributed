@@ -1,0 +1,7 @@
+public struct {{PACKAGE_NAME}}Library {
+    public init() {}
+
+    public func greeting() -> String {
+        "Hello from {{PACKAGE_NAME}}."
+    }
+}

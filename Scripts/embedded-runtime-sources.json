@@ -1,0 +1,70 @@
+{
+  "python": {
+    "id": "python",
+    "title": "Embedded Python",
+    "version": "3.13.9",
+    "repository": "https://github.com/python/cpython.git",
+    "ref": "v3.13.9",
+    "commit": "8183fa5e3f78ca6ab862de7fb8b14f3d929421e0",
+    "supportFrameworkName": "Python",
+    "bridgeFrameworkName": "OllamaKitPythonRuntime",
+    "bridgeSymbol": "OllamaKitPythonRunJSON",
+    "supportedOperations": [
+      "script",
+      "stdin",
+      "workspace_imports",
+      "pure_python_packages"
+    ],
+    "requiredResources": [
+      "Resources/OllamaKitPython/bootstrap.py",
+      "Resources/OllamaKitPython/Home/bin",
+      "Resources/OllamaKitPython/Home/lib",
+      "Resources/OllamaKitPython/native-extension-allowlist.json"
+    ],
+    "supportFrameworks": [
+      "Python.framework"
+    ]
+  },
+  "node": {
+    "id": "node",
+    "title": "Embedded Node.js",
+    "version": "nodejs-mobile-v0.3.3",
+    "repository": "https://github.com/JaneaSystems/nodejs-mobile.git",
+    "ref": "nodejs-mobile-v0.3.3",
+    "commit": "780ae712b47fb34c459ea5e3b1d566f029c3c99a",
+    "supportFrameworkName": "NodeMobile",
+    "bridgeFrameworkName": "OllamaKitNodeRuntime",
+    "bridgeSymbol": "OllamaKitNodeRunJSON",
+    "supportedOperations": [
+      "script",
+      "workspace_modules",
+      "pure_js_packages"
+    ],
+    "requiredResources": [
+      "Resources/OllamaKitNode/bootstrap.js",
+      "Resources/OllamaKitNode/native-addon-allowlist.json"
+    ],
+    "supportFrameworks": [
+      "NodeMobile.framework"
+    ]
+  },
+  "swift": {
+    "id": "swift",
+    "title": "Embedded Swift Workspace",
+    "version": "workspace-assistant-v1",
+    "bridgeFrameworkName": "OllamaKitSwiftRuntime",
+    "bridgeSymbol": "OllamaKitSwiftRunJSON",
+    "supportedOperations": [
+      "scaffold_package",
+      "inspect_sources",
+      "rewrite_package_name",
+      "diagnose_manifest"
+    ],
+    "requiredResources": [
+      "Resources/OllamaKitSwift/Templates/Package.swift.template",
+      "Resources/OllamaKitSwift/Templates/Library.swift.template",
+      "Resources/OllamaKitSwift/Templates/Tests.swift.template"
+    ],
+    "supportFrameworks": []
+  }
+}

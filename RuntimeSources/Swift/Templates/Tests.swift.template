@@ -1,0 +1,8 @@
+import XCTest
+@testable import {{PACKAGE_NAME}}
+
+final class {{PACKAGE_NAME}}Tests: XCTestCase {
+    func testGreeting() {
+        XCTAssertEqual({{PACKAGE_NAME}}Library().greeting(), "Hello from {{PACKAGE_NAME}}.")
+    }
+}
