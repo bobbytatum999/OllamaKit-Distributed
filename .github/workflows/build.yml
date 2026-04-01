@@ -119,9 +119,101 @@ jobs:
           set -euo pipefail
           mkdir -p Vendor/Runtime
           printf '{}' > Vendor/Runtime/EmbeddedRuntimeManifest.json
-          mkdir -p Vendor/Runtime/OllamaKitPythonRuntime.xcframework
-          mkdir -p Vendor/Runtime/OllamaKitNodeRuntime.xcframework
-          mkdir -p Vendor/Runtime/OllamaKitSwiftRuntime.xcframework
+          
+          # Function to create a minimal mock XCFramework
+          create_mock_xcframework() {
+            local name="$1"
+            local framework_dir="Vendor/Runtime/${name}.xcframework"
+            mkdir -p "${framework_dir}/ios-arm64/${name}.framework"
+            mkdir -p "${framework_dir}/ios-arm64-simulator/${name}.framework"
+            
+            # Create Info.plist for the framework
+            cat > "${framework_dir}/ios-arm64/${name}.framework/Info.plist" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>REPLACE_NAME</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.ollamakit.REPLACE_NAME</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>REPLACE_NAME</string>
+    <key>CFBundlePackageType</key>
+    <string>FMWK</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+</dict>
+</plist>
+EOF
+            sed -i '' "s/REPLACE_NAME/${name}/g" "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            cp "${framework_dir}/ios-arm64/${name}.framework/Info.plist" "${framework_dir}/ios-arm64-simulator/${name}.framework/Info.plist"
+            
+            # Create the XCFramework Info.plist
+            cat > "${framework_dir}/Info.plist" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>AvailableLibraries</key>
+    <array>
+        <dict>
+            <key>BinaryPath</key>
+            <string>REPLACE_NAME.framework/REPLACE_NAME</string>
+            <key>LibraryIdentifier</key>
+            <string>ios-arm64</string>
+            <key>LibraryPath</key>
+            <string>REPLACE_NAME.framework</string>
+            <key>SupportedArchitectures</key>
+            <array>
+                <string>arm64</string>
+            </array>
+            <key>SupportedPlatform</key>
+            <string>ios</string>
+        </dict>
+        <dict>
+            <key>BinaryPath</key>
+            <string>REPLACE_NAME.framework/REPLACE_NAME</string>
+            <key>LibraryIdentifier</key>
+            <string>ios-arm64-simulator</string>
+            <key>LibraryPath</key>
+            <string>REPLACE_NAME.framework</string>
+            <key>SupportedArchitectures</key>
+            <array>
+                <string>arm64</string>
+            </array>
+            <key>SupportedPlatform</key>
+            <string>ios</string>
+            <key>SupportedPlatformVariant</key>
+            <string>simulator</string>
+        </dict>
+    </array>
+    <key>CFBundlePackageType</key>
+    <string>XFWK</string>
+    <key>XCFrameworkFormatVersion</key>
+    <string>1.0</string>
+</dict>
+</plist>
+EOF
+            sed -i '' "s/REPLACE_NAME/${name}/g" "${framework_dir}/Info.plist"
+            
+            # Create empty binary files (Xcode just needs them to exist)
+            touch "${framework_dir}/ios-arm64/${name}.framework/${name}"
+            touch "${framework_dir}/ios-arm64-simulator/${name}.framework/${name}"
+          }
+          
+          # Create mock XCFrameworks for all required runtimes
+          create_mock_xcframework "Python"
+          create_mock_xcframework "OllamaKitPythonRuntime"
+          create_mock_xcframework "NodeMobile"
+          create_mock_xcframework "OllamaKitNodeRuntime"
+          create_mock_xcframework "OllamaKitSwiftRuntime"
 
       - name: Generate agent workspace seed
         run: |
