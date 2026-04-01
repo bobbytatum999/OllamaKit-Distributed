@@ -199,12 +199,10 @@ jobs:
             printf '%s\n' '</plist>' >> "${framework_dir}/Info.plist"
             
             # Create minimal Mach-O dylib binaries that can be signed
-            # Use clang to create valid but empty dynamic libraries
-            cat > /tmp/dummy.c << 'CSOURCE'
-// Minimal dummy dynamic library
-void dummy_init(void) __attribute__((constructor));
-void dummy_init(void) { }
-CSOURCE
+            # Use printf to create a minimal C source file
+            printf '%s\n' '// Minimal dummy dynamic library' > /tmp/dummy.c
+            printf '%s\n' 'void dummy_init(void) __attribute__((constructor));' >> /tmp/dummy.c
+            printf '%s\n' 'void dummy_init(void) { }' >> /tmp/dummy.c
             
             # Compile for arm64 (device)
             clang -dynamiclib -arch arm64 -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
