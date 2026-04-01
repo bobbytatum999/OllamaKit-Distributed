@@ -43,22 +43,8 @@ jobs:
 
     - name: Select Xcode Version
       run: |
-        set -eo pipefail
-        shopt -s nullglob
-        candidates=(/Applications/Xcode_${XCODE_MAJOR}*.app)
-        if [ -d /Applications/Xcode.app ]; then
-          candidates+=(/Applications/Xcode.app)
-        fi
-        if [ "${#candidates[@]}" -eq 0 ]; then
-          echo "No Xcode ${XCODE_MAJOR}.x installation found on this runner."
-          exit 1
-        fi
-        IFS=$'\n' sorted_candidates=($(printf '%s\n' "${candidates[@]}" | python3 -c "import re,sys; key=lambda value: [int(part) if part.isdigit() else part.lower() for part in re.split(r'(\\d+)', value.strip())]; values=[line.strip() for line in sys.stdin if line.strip()]; print('\\n'.join(sorted(values, key=key, reverse=True)))"))
-        unset IFS
-        selected_xcode="${sorted_candidates[0]}"
-        echo "Using $selected_xcode"
-        sudo xcode-select -s "$selected_xcode/Contents/Developer"
-        echo "DEVELOPER_DIR=$selected_xcode/Contents/Developer" >> "$GITHUB_ENV"
+        sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.1.app || sudo xcode-select -s /Applications/Xcode_16.app
+        echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
 
     - name: Verify iPhoneOS SDK
       run: |
