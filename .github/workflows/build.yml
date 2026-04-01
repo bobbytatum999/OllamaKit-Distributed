@@ -201,6 +201,14 @@ jobs:
             # Create empty binary files (Xcode just needs them to exist)
             touch "${framework_dir}/ios-arm64/${name}.framework/${name}"
             touch "${framework_dir}/ios-arm64-simulator/${name}.framework/${name}"
+            
+            # Create Resources directory with EmbeddedRuntimeManifest.json for OllamaKit* runtimes
+            if [[ "${name}" == OllamaKit* ]]; then
+              mkdir -p "${framework_dir}/ios-arm64/${name}.framework/Resources"
+              mkdir -p "${framework_dir}/ios-arm64-simulator/${name}.framework/Resources"
+              printf '{}' > "${framework_dir}/ios-arm64/${name}.framework/Resources/EmbeddedRuntimeManifest.json"
+              printf '{}' > "${framework_dir}/ios-arm64-simulator/${name}.framework/Resources/EmbeddedRuntimeManifest.json"
+            fi
           }
           
           # Create mock XCFrameworks for all required runtimes
