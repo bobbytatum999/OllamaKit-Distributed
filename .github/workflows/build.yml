@@ -198,9 +198,27 @@ jobs:
             printf '%s\n' '</dict>' >> "${framework_dir}/Info.plist"
             printf '%s\n' '</plist>' >> "${framework_dir}/Info.plist"
             
-            # Create empty binary files (Xcode just needs them to exist)
-            touch "${framework_dir}/ios-arm64/${name}.framework/${name}"
-            touch "${framework_dir}/ios-arm64-simulator/${name}.framework/${name}"
+            # Create minimal Mach-O dylib binaries that can be signed
+            # Use clang to create valid but empty dynamic libraries
+            cat > /tmp/dummy.c << 'CSOURCE'
+// Minimal dummy dynamic library
+void dummy_init(void) __attribute__((constructor));
+void dummy_init(void) { }
+CSOURCE
+            
+            # Compile for arm64 (device)
+            clang -dynamiclib -arch arm64 -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
+              -o "${framework_dir}/ios-arm64/${name}.framework/${name}" /tmp/dummy.c \
+              -install_name "@rpath/${name}.framework/${name}" 2>/dev/null || \
+            # Fallback: create minimal Mach-O header if clang fails
+            printf '\xcf\xfa\xed\xfe\x0c\x00\x00\x01\x00\x00\x00\x00\x02\x00\x00\x00' > "${framework_dir}/ios-arm64/${name}.framework/${name}"
+            
+            # Compile for arm64 (simulator)
+            clang -dynamiclib -arch arm64 -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+              -o "${framework_dir}/ios-arm64-simulator/${name}.framework/${name}" /tmp/dummy.c \
+              -install_name "@rpath/${name}.framework/${name}" 2>/dev/null || \
+            # Fallback: create minimal Mach-O header if clang fails  
+            printf '\xcf\xfa\xed\xfe\x0c\x00\x00\x01\x00\x00\x00\x00\x02\x00\x00\x00' > "${framework_dir}/ios-arm64-simulator/${name}.framework/${name}"
             
             # Create Resources directory with EmbeddedRuntimeManifest.json for OllamaKit* runtimes
             if [[ "${name}" == OllamaKit* ]]; then
