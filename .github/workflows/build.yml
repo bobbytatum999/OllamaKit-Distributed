@@ -127,81 +127,76 @@ jobs:
             mkdir -p "${framework_dir}/ios-arm64/${name}.framework"
             mkdir -p "${framework_dir}/ios-arm64-simulator/${name}.framework"
             
-            # Create Info.plist for the framework
-            cat > "${framework_dir}/ios-arm64/${name}.framework/Info.plist" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>REPLACE_NAME</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.ollamakit.REPLACE_NAME</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>REPLACE_NAME</string>
-    <key>CFBundlePackageType</key>
-    <string>FMWK</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-</dict>
-</plist>
-EOF
-            sed -i '' "s/REPLACE_NAME/${name}/g" "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            # Create Info.plist for the framework using printf to avoid YAML issues
+            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' > "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '<plist version="1.0">' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '<dict>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <key>CFBundleDevelopmentRegion</key>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <string>en</string>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <key>CFBundleExecutable</key>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '    <string>%s</string>\n' "${name}" >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <key>CFBundleIdentifier</key>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '    <string>com.ollamakit.%s</string>\n' "${name}" >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <key>CFBundleInfoDictionaryVersion</key>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <string>6.0</string>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <key>CFBundleName</key>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '    <string>%s</string>\n' "${name}" >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <key>CFBundlePackageType</key>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <string>FMWK</string>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <key>CFBundleShortVersionString</key>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <string>1.0</string>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <key>CFBundleVersion</key>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '    <string>1</string>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '</dict>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            printf '%s\n' '</plist>' >> "${framework_dir}/ios-arm64/${name}.framework/Info.plist"
+            
             cp "${framework_dir}/ios-arm64/${name}.framework/Info.plist" "${framework_dir}/ios-arm64-simulator/${name}.framework/Info.plist"
             
             # Create the XCFramework Info.plist
-            cat > "${framework_dir}/Info.plist" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>AvailableLibraries</key>
-    <array>
-        <dict>
-            <key>BinaryPath</key>
-            <string>REPLACE_NAME.framework/REPLACE_NAME</string>
-            <key>LibraryIdentifier</key>
-            <string>ios-arm64</string>
-            <key>LibraryPath</key>
-            <string>REPLACE_NAME.framework</string>
-            <key>SupportedArchitectures</key>
-            <array>
-                <string>arm64</string>
-            </array>
-            <key>SupportedPlatform</key>
-            <string>ios</string>
-        </dict>
-        <dict>
-            <key>BinaryPath</key>
-            <string>REPLACE_NAME.framework/REPLACE_NAME</string>
-            <key>LibraryIdentifier</key>
-            <string>ios-arm64-simulator</string>
-            <key>LibraryPath</key>
-            <string>REPLACE_NAME.framework</string>
-            <key>SupportedArchitectures</key>
-            <array>
-                <string>arm64</string>
-            </array>
-            <key>SupportedPlatform</key>
-            <string>ios</string>
-            <key>SupportedPlatformVariant</key>
-            <string>simulator</string>
-        </dict>
-    </array>
-    <key>CFBundlePackageType</key>
-    <string>XFWK</string>
-    <key>XCFrameworkFormatVersion</key>
-    <string>1.0</string>
-</dict>
-</plist>
-EOF
-            sed -i '' "s/REPLACE_NAME/${name}/g" "${framework_dir}/Info.plist"
+            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' > "${framework_dir}/Info.plist"
+            printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '<plist version="1.0">' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '<dict>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '    <key>AvailableLibraries</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '    <array>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '        <dict>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>BinaryPath</key>' >> "${framework_dir}/Info.plist"
+            printf '            <string>%s.framework/%s</string>\n' "${name}" "${name}" >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>LibraryIdentifier</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <string>ios-arm64</string>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>LibraryPath</key>' >> "${framework_dir}/Info.plist"
+            printf '            <string>%s.framework</string>\n' "${name}" >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>SupportedArchitectures</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <array>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '                <string>arm64</string>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            </array>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>SupportedPlatform</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <string>ios</string>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '        </dict>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '        <dict>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>BinaryPath</key>' >> "${framework_dir}/Info.plist"
+            printf '            <string>%s.framework/%s</string>\n' "${name}" "${name}" >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>LibraryIdentifier</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <string>ios-arm64-simulator</string>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>LibraryPath</key>' >> "${framework_dir}/Info.plist"
+            printf '            <string>%s.framework</string>\n' "${name}" >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>SupportedArchitectures</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <array>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '                <string>arm64</string>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            </array>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>SupportedPlatform</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <string>ios</string>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <key>SupportedPlatformVariant</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '            <string>simulator</string>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '        </dict>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '    </array>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '    <key>CFBundlePackageType</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '    <string>XFWK</string>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '    <key>XCFrameworkFormatVersion</key>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '    <string>1.0</string>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '</dict>' >> "${framework_dir}/Info.plist"
+            printf '%s\n' '</plist>' >> "${framework_dir}/Info.plist"
             
             # Create empty binary files (Xcode just needs them to exist)
             touch "${framework_dir}/ios-arm64/${name}.framework/${name}"
