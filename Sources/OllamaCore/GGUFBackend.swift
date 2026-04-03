@@ -38,7 +38,9 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             batchSize: runtime.batchSize,
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
-            mlockEnabled: runtime.mlockEnabled
+            mlockEnabled: runtime.mlockEnabled,
+            kvCacheTypeK: runtime.kvCacheTypeK,
+            kvCacheTypeV: runtime.kvCacheTypeV
         )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -80,7 +82,9 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             batchSize: runtime.batchSize,
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
-            mlockEnabled: runtime.mlockEnabled
+            mlockEnabled: runtime.mlockEnabled,
+            kvCacheTypeK: runtime.kvCacheTypeK,
+            kvCacheTypeV: runtime.kvCacheTypeV
         )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -259,6 +263,8 @@ private struct BackendConfiguration: Equatable {
     let flashAttentionEnabled: Bool
     let mmapEnabled: Bool
     let mlockEnabled: Bool
+    let kvCacheTypeK: RuntimePreferences.KVCacheQuantization
+    let kvCacheTypeV: RuntimePreferences.KVCacheQuantization
 }
 
 private extension NSLock {
@@ -314,6 +320,10 @@ private final class BackendEngine {
         contextParams.n_threads_batch = Int32(configuration.threads)
         contextParams.flash_attn_type = configuration.flashAttentionEnabled ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED
         contextParams.no_perf = false
+        // KV cache quantization settings are intentionally carried in runtime configuration
+        // so we can map them onto llama.cpp context params when all build variants expose
+        // stable type_k/type_v bindings. This keeps the settings/API surface ready for
+        // TurboQuant-style KV work without breaking older runtime snapshots.
 
         #if targetEnvironment(simulator)
         contextParams.offload_kqv = false
