@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 import OllamaCore
+import AVFoundation
+import Speech
 
 struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
@@ -13,6 +15,7 @@ struct ChatView: View {
     @State private var showingModelSelector = false
     @State private var showingRenameDialog = false
     @State private var pendingTitle = ""
+    @StateObject private var voiceInput = VoiceInputController()
     
     @Namespace private var bottomID
 
@@ -126,11 +129,11 @@ struct ChatView: View {
                             )
                         
                         Button(action: sendMessage) {
-                            Image(systemName: trimmedMessageText.isEmpty ? "waveform" : "arrow.up.circle.fill")
+                            Image(systemName: sendButtonSystemImage)
                                 .font(.system(size: 32))
-                                .foregroundStyle(trimmedMessageText.isEmpty ? Color.secondary : Color.accentColor)
+                                .foregroundStyle(sendButtonColor)
                         }
-                        .disabled(trimmedMessageText.isEmpty || viewModel.isGenerating)
+                        .disabled((trimmedMessageText.isEmpty && !canStartOrStopVoiceInput) || viewModel.isGenerating)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -197,6 +200,14 @@ struct ChatView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+        .alert("Voice Input Error", isPresented: Binding(
+            get: { voiceInput.errorMessage != nil },
+            set: { if !$0 { voiceInput.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(voiceInput.errorMessage ?? "")
+        }
         .alert("Rename Chat", isPresented: $showingRenameDialog) {
             TextField("Chat Title", text: $pendingTitle)
             Button("Save") {
@@ -208,6 +219,9 @@ struct ChatView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .onDisappear {
+            voiceInput.stopRecording()
         }
     }
 
@@ -233,6 +247,12 @@ struct ChatView: View {
     }
     
     private func sendMessage() {
+        if trimmedMessageText.isEmpty {
+            toggleVoiceInput()
+            return
+        }
+
+        voiceInput.stopRecording()
         let content = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty else { return }
 
@@ -275,6 +295,178 @@ struct ChatView: View {
 
         if viewModel.currentModel != nil {
             viewModel.currentModel = nil
+        }
+    }
+
+    private var canStartOrStopVoiceInput: Bool {
+        voiceInput.isRecording || voiceInput.isAvailable
+    }
+
+    private var sendButtonSystemImage: String {
+        if !trimmedMessageText.isEmpty {
+            return "arrow.up.circle.fill"
+        }
+
+        return voiceInput.isRecording ? "stop.circle.fill" : "mic.circle.fill"
+    }
+
+    private var sendButtonColor: Color {
+        if !trimmedMessageText.isEmpty {
+            return .accentColor
+        }
+
+        return voiceInput.isRecording ? .red : .secondary
+    }
+
+    private func toggleVoiceInput() {
+        if voiceInput.isRecording {
+            voiceInput.stopRecording()
+            return
+        }
+
+        voiceInput.startRecording { transcript, isFinal in
+            messageText = transcript
+            if isFinal {
+                Task { @MainActor in
+                    HapticManager.impact(.light)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+final class VoiceInputController: NSObject, ObservableObject {
+    @Published var isRecording = false
+    @Published var isAvailable = true
+    @Published var errorMessage: String?
+
+    private let audioEngine = AVAudioEngine()
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+
+    func startRecording(onTranscript: @escaping @MainActor (String, Bool) -> Void) {
+        Task { @MainActor in
+            guard await requestPermissionsIfNeeded() else { return }
+            do {
+                try configureAndStartRecognition(onTranscript: onTranscript)
+            } catch {
+                stopRecording()
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func stopRecording() {
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        isRecording = false
+    }
+
+    private func requestPermissionsIfNeeded() async -> Bool {
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        let speechAuthorized: Bool
+        switch speechStatus {
+        case .authorized:
+            speechAuthorized = true
+        case .notDetermined:
+            speechAuthorized = await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status == .authorized)
+                }
+            }
+        default:
+            speechAuthorized = false
+        }
+
+        guard speechAuthorized else {
+            isAvailable = false
+            errorMessage = "Speech recognition permission is required for voice input."
+            return false
+        }
+
+        let micAuthorized = await requestMicrophonePermission()
+        guard micAuthorized else {
+            isAvailable = false
+            errorMessage = "Microphone permission is required for voice input."
+            return false
+        }
+
+        isAvailable = speechRecognizer?.isAvailable == true
+        guard isAvailable else {
+            errorMessage = "Voice input is currently unavailable for your selected language."
+            return false
+        }
+
+        return true
+    }
+
+    private func requestMicrophonePermission() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    private func configureAndStartRecognition(onTranscript: @escaping @MainActor (String, Bool) -> Void) throws {
+        stopRecording()
+
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.record, mode: .measurement, options: [.duckOthers])
+        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        recognitionRequest = request
+
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let self else { return }
+            self.recognitionRequest?.append(buffer)
+        }
+
+        audioEngine.prepare()
+        try audioEngine.start()
+
+        isRecording = true
+        errorMessage = nil
+
+        recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
+            guard let self else { return }
+
+            if let result {
+                Task { @MainActor in
+                    onTranscript(result.bestTranscription.formattedString, result.isFinal)
+                }
+
+                if result.isFinal {
+                    Task { @MainActor in
+                        self.stopRecording()
+                    }
+                    return
+                }
+            }
+
+            if let error {
+                Task { @MainActor in
+                    self.stopRecording()
+                    self.errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 }
