@@ -39,7 +39,6 @@
 		000000010000000000000024 /* AnemllCore in Frameworks */ = {isa = PBXBuildFile; productRef = 000000010000000000000A01 /* AnemllCore */; };
 		000000010000000000000025 /* AgentServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011B /* AgentServices.swift */; };
 		000000010000000000000026 /* GeneratedAgentWorkspaceSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011C /* GeneratedAgentWorkspaceSeed.swift */; };
-		000000010000000000000027 /* AgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011D /* AgentView.swift */; };
 		000000010000000000000028 /* LocalFilesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011E /* LocalFilesModels.swift */; };
 		000000010000000000000029 /* LocalFilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011F /* LocalFilesSettingsView.swift */; };
 		00000001000000000000002A /* LocalFilesScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000120 /* LocalFilesScanner.swift */; };
@@ -132,7 +131,6 @@
 		00000001000000000000011A /* RuntimeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeCoordinator.swift; sourceTree = "<group>"; };
 		00000001000000000000011B /* AgentServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentServices.swift; sourceTree = "<group>"; };
 		00000001000000000000011C /* GeneratedAgentWorkspaceSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedAgentWorkspaceSeed.swift; sourceTree = "<group>"; };
-		00000001000000000000011D /* AgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentView.swift; sourceTree = "<group>"; };
 		00000001000000000000011E /* LocalFilesModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesModels.swift; sourceTree = "<group>"; };
 		00000001000000000000011F /* LocalFilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesSettingsView.swift; sourceTree = "<group>"; };
 		000000010000000000000120 /* LocalFilesScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesScanner.swift; sourceTree = "<group>"; };
@@ -204,7 +202,6 @@
 		000000010000000000000400 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				00000001000000000000011D /* AgentView.swift */,
 				000000010000000000000102 /* ContentView.swift */,
 				000000010000000000000103 /* ChatView.swift */,
 				000000010000000000000104 /* ChatSessionsView.swift */,
@@ -359,7 +356,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				000000010000000000000001 /* OllamaKitApp.swift in Sources */,
-				000000010000000000000027 /* AgentView.swift in Sources */,
 				000000010000000000000002 /* ContentView.swift in Sources */,
 				000000010000000000000003 /* ChatView.swift in Sources */,
 				000000010000000000000004 /* ChatSessionsView.swift in Sources */,
