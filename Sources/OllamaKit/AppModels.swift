@@ -119,6 +119,55 @@ struct ServerLogEntry: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
+enum AppLogLevel: String, CaseIterable, Identifiable, Codable, Sendable {
+    case debug
+    case info
+    case warning
+    case error
+
+    var id: String { rawValue }
+}
+
+enum AppLogCategory: String, CaseIterable, Identifiable, Codable, Sendable {
+    case navigation
+    case interaction
+    case chat
+    case model
+    case settings
+    case runtime
+    case error
+
+    var id: String { rawValue }
+}
+
+struct AppLogEntry: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    let timestamp: Date
+    let level: AppLogLevel
+    let category: AppLogCategory
+    let title: String
+    let message: String
+    let metadata: [String: String]
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = .now,
+        level: AppLogLevel,
+        category: AppLogCategory,
+        title: String,
+        message: String,
+        metadata: [String: String] = [:]
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.level = level
+        self.category = category
+        self.title = title
+        self.message = message
+        self.metadata = metadata
+    }
+}
+
 enum AppPersistencePaths {
     static var applicationSupportURL: URL {
         let fileManager = FileManager.default
@@ -241,6 +290,70 @@ final class ServerLogStore: ObservableObject {
             message: PersistentLogRedactor.redact(entry.message) ?? entry.message,
             requestID: PersistentLogRedactor.redact(entry.requestID),
             body: PersistentLogRedactor.redact(entry.body),
+            metadata: PersistentLogRedactor.redact(metadata: entry.metadata)
+        )
+    }
+}
+
+@MainActor
+final class AppLogStore: ObservableObject {
+    static let shared = AppLogStore()
+    private static let storageURL = AppPersistencePaths.logsDirectoryURL.appendingPathComponent("app-log-buffer.json")
+    private let maxEntries = 800
+
+    @Published private(set) var entries: [AppLogEntry] = []
+
+    var retentionLimit: Int { maxEntries }
+    var storageLocationDescription: String { "Application Support/Logs/app-log-buffer.json" }
+    var persistenceSummary: String { "App debug logs only (excludes server logs). Keeps latest \(maxEntries) events." }
+
+    private init() {
+        entries = PersistentJSONStore.load([AppLogEntry].self, from: Self.storageURL, fallback: []).map(Self.sanitized)
+    }
+
+    func record(
+        _ category: AppLogCategory,
+        level: AppLogLevel = .info,
+        title: String,
+        message: String,
+        metadata: [String: String] = [:]
+    ) {
+        entries.append(
+            Self.sanitized(
+                AppLogEntry(
+                    level: level,
+                    category: category,
+                    title: title,
+                    message: message,
+                    metadata: metadata
+                )
+            )
+        )
+
+        let overflow = entries.count - maxEntries
+        if overflow > 0 {
+            entries.removeFirst(overflow)
+        }
+        persist()
+    }
+
+    func clear() {
+        entries.removeAll()
+        persist()
+    }
+
+    private func persist() {
+        PersistentJSONStore.save(entries, to: Self.storageURL)
+    }
+
+    private static func sanitized(_ entry: AppLogEntry) -> AppLogEntry {
+        AppLogEntry(
+            id: entry.id,
+            timestamp: entry.timestamp,
+            level: entry.level,
+            category: entry.category,
+            title: PersistentLogRedactor.redact(entry.title) ?? entry.title,
+            message: PersistentLogRedactor.redact(entry.message) ?? entry.message,
             metadata: PersistentLogRedactor.redact(metadata: entry.metadata)
         )
     }

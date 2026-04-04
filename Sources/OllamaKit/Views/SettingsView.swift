@@ -45,6 +45,13 @@ struct SettingsView: View {
                         InterfaceSettingsSection(settings: settings)
                     }
 
+                    SurfaceSectionCard(
+                        title: "App Debug Logs",
+                        footer: "Client-side app events only (tab switches, chat send/receive, runtime errors). Server/API logs remain in the Server tab."
+                    ) {
+                        AppDebugLogsSection()
+                    }
+
                     SurfaceSectionCard(title: "Data Management") {
                         DataManagementSection()
                     }
@@ -670,6 +677,66 @@ struct DataManagementSection: View {
             }
         } message: {
             Text("This will permanently delete all downloaded and imported models. You'll need to add them again to use them.")
+        }
+    }
+}
+
+struct AppDebugLogsSection: View {
+    @ObservedObject private var logStore = AppLogStore.shared
+
+    private var recentEntries: [AppLogEntry] {
+        Array(logStore.entries.suffix(60).reversed())
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recent Events")
+                        .font(.system(size: 16, weight: .medium))
+                    Text(logStore.persistenceSummary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Clear") {
+                    logStore.clear()
+                    HapticManager.impact(.light)
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .buttonStyle(.bordered)
+            }
+            .padding(.vertical, 12)
+
+            if recentEntries.isEmpty {
+                Divider()
+                Text("No app debug logs yet.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Divider()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(recentEntries) { entry in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("[\(entry.category.rawValue)] \(entry.title)")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text(entry.message)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                Text(entry.timestamp.formatted(date: .omitted, time: .standard))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
+            }
         }
     }
 }
