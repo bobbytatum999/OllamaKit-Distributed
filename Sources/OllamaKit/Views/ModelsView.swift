@@ -50,13 +50,9 @@ struct ModelsView: View {
                         if installedModels.isEmpty {
                             EmptyModelsView()
                         } else {
-                            VStack(spacing: 0) {
-                                ForEach(Array(installedModels.enumerated()), id: \.element.id) { index, model in
+                            VStack(spacing: 12) {
+                                ForEach(installedModels, id: \.id) { model in
                                     DownloadedModelRow(model: model, viewModel: viewModel)
-
-                                    if index < installedModels.count - 1 {
-                                        Divider()
-                                    }
                                 }
                             }
                         }
@@ -356,75 +352,95 @@ struct DownloadedModelRow: View {
     @State private var showingAgentCapabilities = false
     
     var body: some View {
-        HStack(spacing: 16) {
-            // Model icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 56, height: 56)
-                
-                Image(systemName: "cube.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Color.accentColor)
-            }
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text(model.displayName)
-                    .font(.system(size: 17, weight: .semibold))
-                
-                HStack(spacing: 12) {
-                    Label(model.importSourceLabel, systemImage: model.importSourceIcon)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [.accentColor.opacity(0.26), .accentColor.opacity(0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 48, height: 48)
 
-                    Label(model.quantization, systemImage: model.backendKind == .coreMLPackage ? "shippingbox" : "cpu")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-
-                    if model.size > 0 {
-                        Text("•")
-                            .foregroundStyle(.tertiary)
-
-                        Label(model.formattedSize, systemImage: "externaldrive")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
+                    Image(systemName: "cube.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
-                
-                HStack(spacing: 12) {
-                    Label("\(model.runtimeContextLength) ctx", systemImage: "text.alignleft")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
 
-                    if let runtimeAvailabilityLabel = model.runtimeAvailabilityLabel {
-                        Text("•")
-                            .foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(model.displayName)
+                            .font(.system(size: 17, weight: .semibold))
+                            .lineLimit(2)
 
-                        Label(runtimeAvailabilityLabel, systemImage: "exclamationmark.triangle")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.orange)
+                        if modelRunner.activeCatalogId == model.catalogId {
+                            Text("ACTIVE")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.green)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(.green.opacity(0.16))
+                                )
+                        }
+                    }
+
+                    FlowLayout(spacing: 8) {
+                        ModelBadge(text: model.importSourceLabel, systemImage: model.importSourceIcon)
+                        ModelBadge(text: model.quantization, systemImage: model.backendKind == .coreMLPackage ? "shippingbox" : "cpu")
+                        if model.size > 0 {
+                            ModelBadge(text: model.formattedSize, systemImage: "externaldrive")
+                        }
+                        ModelBadge(text: "\(model.runtimeContextLength) ctx", systemImage: "text.alignleft")
                     }
                 }
             }
-            
-            Spacer()
-            
-            // Status indicator
-            if modelRunner.activeCatalogId == model.catalogId {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.system(size: 22))
+
+            if let runtimeAvailabilityLabel = model.runtimeAvailabilityLabel {
+                Label(runtimeAvailabilityLabel, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.orange)
             }
-            
-            Button {
-                showingOptions = true
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                if model.isRunnableInCurrentBuild {
+                    Button("Load") {
+                        loadModel()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                if AppSettings.shared.defaultModelId != model.persistentReference, model.isRunnableInCurrentBuild {
+                    Button("Set Default") {
+                        AppSettings.shared.defaultModelId = model.persistentReference
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+
+                Button {
+                    showingOptions = true
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 21))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
-        .padding(.vertical, 8)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 0.6)
+                )
+        )
         .contextMenu {
             if model.isRunnableInCurrentBuild {
                 Button {
@@ -572,6 +588,43 @@ struct DownloadedModelRow: View {
                     HapticManager.notification(.warning)
                 }
             }
+        }
+    }
+}
+
+private struct ModelBadge: View {
+    let text: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+            Text(text)
+        }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.thinMaterial)
+        )
+    }
+}
+
+private struct FlowLayout<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder var content: Content
+
+    init(spacing: CGFloat = 8, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            content
+            Spacer(minLength: 0)
         }
     }
 }
