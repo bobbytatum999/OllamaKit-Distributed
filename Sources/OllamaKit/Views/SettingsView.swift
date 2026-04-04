@@ -52,6 +52,13 @@ struct SettingsView: View {
                         AppDebugLogsSection()
                     }
 
+                    SurfaceSectionCard(
+                        title: "Model Performance",
+                        footer: "Recent model load/generation timing samples to help debug slow responses."
+                    ) {
+                        ModelPerformanceSection()
+                    }
+
                     SurfaceSectionCard(title: "Data Management") {
                         DataManagementSection()
                     }
@@ -737,6 +744,69 @@ struct AppDebugLogsSection: View {
                 }
                 .frame(maxHeight: 220)
             }
+        }
+    }
+}
+
+struct ModelPerformanceSection: View {
+    @ObservedObject private var performanceStore = ModelPerformanceStore.shared
+
+    private var entries: [ModelPerformanceSample] {
+        Array(performanceStore.entries.suffix(40).reversed())
+    }
+
+    private var averageTokensPerSecond: Double {
+        let samples = entries.filter { $0.phase == .generate && $0.tokensPerSecond > 0 && $0.wasSuccessful }
+        guard !samples.isEmpty else { return 0 }
+        return samples.reduce(0) { $0 + $1.tokensPerSecond } / Double(samples.count)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recent Speed Samples")
+                        .font(.system(size: 16, weight: .medium))
+                    Text(averageTokensPerSecond > 0 ? String(format: "Avg generate speed: %.1f tok/s", averageTokensPerSecond) : "No completed generation samples yet.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Clear") {
+                    performanceStore.clear()
+                    HapticManager.impact(.light)
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .buttonStyle(.bordered)
+            }
+            .padding(.vertical, 12)
+
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(entries) { entry in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("[\(entry.phase.rawValue)] \(entry.modelID)")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(
+                                entry.phase == .generate
+                                ? String(format: "%.1f ms • %d tokens • %.1f tok/s%@", entry.elapsedMs, entry.tokens, entry.tokensPerSecond, entry.wasSuccessful ? "" : " • failed")
+                                : String(format: "%.1f ms%@", entry.elapsedMs, entry.wasSuccessful ? "" : " • failed")
+                            )
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            if let notes = entry.notes, !notes.isEmpty {
+                                Text(notes)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 220)
         }
     }
 }

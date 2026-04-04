@@ -359,6 +359,72 @@ final class AppLogStore: ObservableObject {
     }
 }
 
+struct ModelPerformanceSample: Identifiable, Hashable, Codable, Sendable {
+    enum Phase: String, Codable, CaseIterable, Sendable {
+        case load
+        case generate
+    }
+
+    let id: UUID
+    let timestamp: Date
+    let modelID: String
+    let phase: Phase
+    let elapsedMs: Double
+    let tokens: Int
+    let tokensPerSecond: Double
+    let wasSuccessful: Bool
+    let notes: String?
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = .now,
+        modelID: String,
+        phase: Phase,
+        elapsedMs: Double,
+        tokens: Int = 0,
+        tokensPerSecond: Double = 0,
+        wasSuccessful: Bool,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.modelID = modelID
+        self.phase = phase
+        self.elapsedMs = elapsedMs
+        self.tokens = tokens
+        self.tokensPerSecond = tokensPerSecond
+        self.wasSuccessful = wasSuccessful
+        self.notes = notes
+    }
+}
+
+@MainActor
+final class ModelPerformanceStore: ObservableObject {
+    static let shared = ModelPerformanceStore()
+    private static let storageURL = AppPersistencePaths.logsDirectoryURL.appendingPathComponent("model-performance-buffer.json")
+    private let maxEntries = 300
+
+    @Published private(set) var entries: [ModelPerformanceSample] = []
+
+    private init() {
+        entries = PersistentJSONStore.load([ModelPerformanceSample].self, from: Self.storageURL, fallback: [])
+    }
+
+    func record(_ sample: ModelPerformanceSample) {
+        entries.append(sample)
+        let overflow = entries.count - maxEntries
+        if overflow > 0 {
+            entries.removeFirst(overflow)
+        }
+        PersistentJSONStore.save(entries, to: Self.storageURL)
+    }
+
+    func clear() {
+        entries.removeAll()
+        PersistentJSONStore.save(entries, to: Self.storageURL)
+    }
+}
+
 @Model
 final class DownloadedModel {
     var id: UUID
