@@ -206,6 +206,27 @@ struct PerformanceSettingsSection: View {
             )
             
             Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("KV Cache Quant")
+                    .font(.system(size: 16, weight: .medium))
+                Text("Default is safest. Google Turbo (Q4_0) is a community preset and may vary by model.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+
+                Picker("KV Cache Quant", selection: Binding(
+                    get: { settings.kvCachePreset },
+                    set: { settings.kvCachePreset = $0 }
+                )) {
+                    ForEach(RuntimePreferences.KVCachePreset.allCases, id: \.rawValue) { preset in
+                        Text(preset.title).tag(preset)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding(.vertical, 12)
+
+            Divider()
             
             // Flash Attention
             Toggle(isOn: $settings.flashAttentionEnabled) {

@@ -43,7 +43,8 @@ final class ModelRunner: ObservableObject {
                 metadata: [
                     "catalog_id": catalogId,
                     "context_length": "\(max(contextLength, 512))",
-                    "gpu_layers": "\(gpuLayers ?? AppSettings.shared.gpuLayers)"
+                    "gpu_layers": "\(gpuLayers ?? AppSettings.shared.gpuLayers)",
+                    "kv_cache_preset": AppSettings.shared.kvCachePreset.rawValue
                 ]
             )
         }
@@ -66,6 +67,7 @@ final class ModelRunner: ObservableObject {
             gpuLayers: gpuLayers ?? settings.gpuLayers,
             threads: settings.threads,
             batchSize: settings.batchSize,
+            kvCachePreset: settings.kvCachePreset,
             flashAttentionEnabled: settings.flashAttentionEnabled,
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,

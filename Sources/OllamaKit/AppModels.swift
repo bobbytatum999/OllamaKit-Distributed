@@ -1056,6 +1056,7 @@ final class AppSettings: ObservableObject {
     @Published var threads: Int { didSet { save(threads, for: Keys.threads) } }
     @Published var batchSize: Int { didSet { save(batchSize, for: Keys.batchSize) } }
     @Published var gpuLayers: Int { didSet { save(gpuLayers, for: Keys.gpuLayers) } }
+    @Published var kvCachePresetRaw: String { didSet { save(kvCachePresetRaw, for: Keys.kvCachePresetRaw) } }
     @Published var flashAttentionEnabled: Bool { didSet { save(flashAttentionEnabled, for: Keys.flashAttentionEnabled) } }
     @Published var mmapEnabled: Bool { didSet { save(mmapEnabled, for: Keys.mmapEnabled) } }
     @Published var mlockEnabled: Bool { didSet { save(mlockEnabled, for: Keys.mlockEnabled) } }
@@ -1155,6 +1156,7 @@ final class AppSettings: ObservableObject {
         threads = defaults.object(forKey: Keys.threads) as? Int ?? max(ProcessInfo.processInfo.processorCount - 1, 1)
         batchSize = defaults.object(forKey: Keys.batchSize) as? Int ?? 512
         gpuLayers = defaults.object(forKey: Keys.gpuLayers) as? Int ?? 0
+        kvCachePresetRaw = defaults.string(forKey: Keys.kvCachePresetRaw) ?? RuntimePreferences.KVCachePreset.platformDefault.rawValue
         flashAttentionEnabled = defaults.object(forKey: Keys.flashAttentionEnabled) as? Bool ?? false
         mmapEnabled = defaults.object(forKey: Keys.mmapEnabled) as? Bool ?? true
         mlockEnabled = defaults.object(forKey: Keys.mlockEnabled) as? Bool ?? false
@@ -1242,6 +1244,15 @@ final class AppSettings: ObservableObject {
         serverExposureMode.allowsRemoteConnections
     }
 
+    var kvCachePreset: RuntimePreferences.KVCachePreset {
+        get {
+            RuntimePreferences.KVCachePreset(rawValue: kvCachePresetRaw) ?? .platformDefault
+        }
+        set {
+            kvCachePresetRaw = newValue.rawValue
+        }
+    }
+
     var normalizedPublicBaseURL: String? {
         Self.sanitizedPublicBaseURL(from: publicBaseURL)
     }
@@ -1312,6 +1323,7 @@ final class AppSettings: ObservableObject {
         threads = max(ProcessInfo.processInfo.processorCount - 1, 1)
         batchSize = 512
         gpuLayers = 0
+        kvCachePresetRaw = RuntimePreferences.KVCachePreset.platformDefault.rawValue
         flashAttentionEnabled = false
         mmapEnabled = true
         mlockEnabled = false
@@ -1429,6 +1441,7 @@ final class AppSettings: ObservableObject {
         static let threads = "threads"
         static let batchSize = "batchSize"
         static let gpuLayers = "gpuLayers"
+        static let kvCachePresetRaw = "kvCachePresetRaw"
         static let flashAttentionEnabled = "flashAttentionEnabled"
         static let mmapEnabled = "mmapEnabled"
         static let mlockEnabled = "mlockEnabled"
