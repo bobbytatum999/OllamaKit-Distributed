@@ -295,6 +295,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 | Batch Size | 512 | Processing batch size |
 | GPU Layers | 0 | Layers to offload to GPU |
 | Flash Attention | Off | Enable faster attention |
+| KV Cache Type (K) | F16 | Experimental K-cache precision selector |
+| KV Cache Type (V) | F16 | Experimental V-cache precision selector |
 
 ### Memory Management
 | Setting | Default | Description |

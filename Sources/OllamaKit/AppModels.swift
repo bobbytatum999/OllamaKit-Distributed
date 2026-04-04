@@ -927,6 +927,12 @@ final class AppSettings: ObservableObject {
     @Published var flashAttentionEnabled: Bool { didSet { save(flashAttentionEnabled, for: Keys.flashAttentionEnabled) } }
     @Published var mmapEnabled: Bool { didSet { save(mmapEnabled, for: Keys.mmapEnabled) } }
     @Published var mlockEnabled: Bool { didSet { save(mlockEnabled, for: Keys.mlockEnabled) } }
+    @Published var kvCacheTypeK: RuntimePreferences.KVCacheQuantization {
+        didSet { save(kvCacheTypeK.rawValue, for: Keys.kvCacheTypeK) }
+    }
+    @Published var kvCacheTypeV: RuntimePreferences.KVCacheQuantization {
+        didSet { save(kvCacheTypeV.rawValue, for: Keys.kvCacheTypeV) }
+    }
     @Published var keepModelInMemory: Bool { didSet { save(keepModelInMemory, for: Keys.keepModelInMemory) } }
     @Published var autoOffloadMinutes: Int { didSet { save(autoOffloadMinutes, for: Keys.autoOffloadMinutes) } }
 
@@ -1026,6 +1032,8 @@ final class AppSettings: ObservableObject {
         flashAttentionEnabled = defaults.object(forKey: Keys.flashAttentionEnabled) as? Bool ?? false
         mmapEnabled = defaults.object(forKey: Keys.mmapEnabled) as? Bool ?? true
         mlockEnabled = defaults.object(forKey: Keys.mlockEnabled) as? Bool ?? false
+        kvCacheTypeK = RuntimePreferences.KVCacheQuantization(rawValue: defaults.string(forKey: Keys.kvCacheTypeK) ?? "") ?? .float16
+        kvCacheTypeV = RuntimePreferences.KVCacheQuantization(rawValue: defaults.string(forKey: Keys.kvCacheTypeV) ?? "") ?? .float16
         keepModelInMemory = defaults.object(forKey: Keys.keepModelInMemory) as? Bool ?? false
         autoOffloadMinutes = defaults.object(forKey: Keys.autoOffloadMinutes) as? Int ?? 5
 
@@ -1183,6 +1191,8 @@ final class AppSettings: ObservableObject {
         flashAttentionEnabled = false
         mmapEnabled = true
         mlockEnabled = false
+        kvCacheTypeK = .float16
+        kvCacheTypeV = .float16
         keepModelInMemory = false
         autoOffloadMinutes = 5
 
@@ -1300,6 +1310,8 @@ final class AppSettings: ObservableObject {
         static let flashAttentionEnabled = "flashAttentionEnabled"
         static let mmapEnabled = "mmapEnabled"
         static let mlockEnabled = "mlockEnabled"
+        static let kvCacheTypeK = "kvCacheTypeK"
+        static let kvCacheTypeV = "kvCacheTypeV"
         static let keepModelInMemory = "keepModelInMemory"
         static let autoOffloadMinutes = "autoOffloadMinutes"
 

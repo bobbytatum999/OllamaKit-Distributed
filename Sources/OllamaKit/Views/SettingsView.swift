@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import OllamaCore
 
 private let huggingFaceTokensURL = URL(string: "https://huggingface.co/settings/tokens")
 private let githubHomepageURL = URL(string: "https://github.com")
@@ -211,7 +212,64 @@ struct PerformanceSettingsSection: View {
                 }
             }
             .padding(.vertical, 12)
+            
+            Divider()
 
+            KVCachePickerRow(
+                title: "KV Cache Type (K)",
+                description: "Key-cache precision for experimental TurboQuant-style tuning",
+                selection: $settings.kvCacheTypeK
+            )
+
+            Divider()
+
+            KVCachePickerRow(
+                title: "KV Cache Type (V)",
+                description: "Value-cache precision for experimental TurboQuant-style tuning",
+                selection: $settings.kvCacheTypeV
+            )
+
+        }
+    }
+}
+
+private struct KVCachePickerRow: View {
+    let title: String
+    let description: String
+    @Binding var selection: RuntimePreferences.KVCacheQuantization
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 16, weight: .medium))
+            Text(description)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            Picker(title, selection: $selection) {
+                ForEach(RuntimePreferences.KVCacheQuantization.allCases, id: \.self) { option in
+                    Text(label(for: option)).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func label(for option: RuntimePreferences.KVCacheQuantization) -> String {
+        switch option {
+        case .float16:
+            return "F16"
+        case .float32:
+            return "F32"
+        case .q8_0:
+            return "Q8_0"
+        case .q6_K:
+            return "Q6_K"
+        case .q5_0:
+            return "Q5_0"
+        case .q4_0:
+            return "Q4_0"
         }
     }
 }
