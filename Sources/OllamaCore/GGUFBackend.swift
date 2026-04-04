@@ -39,6 +39,7 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
             mlockEnabled: runtime.mlockEnabled,
+            turboQuantMode: runtime.turboQuantMode,
             kvCacheTypeK: runtime.kvCacheTypeK,
             kvCacheTypeV: runtime.kvCacheTypeV
         )
@@ -83,6 +84,7 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
             mlockEnabled: runtime.mlockEnabled,
+            turboQuantMode: runtime.turboQuantMode,
             kvCacheTypeK: runtime.kvCacheTypeK,
             kvCacheTypeV: runtime.kvCacheTypeV
         )
@@ -263,6 +265,7 @@ private struct BackendConfiguration: Equatable {
     let flashAttentionEnabled: Bool
     let mmapEnabled: Bool
     let mlockEnabled: Bool
+    let turboQuantMode: RuntimePreferences.TurboQuantMode
     let kvCacheTypeK: RuntimePreferences.KVCacheQuantization
     let kvCacheTypeV: RuntimePreferences.KVCacheQuantization
 }

@@ -215,11 +215,16 @@ struct PerformanceSettingsSection: View {
             
             Divider()
 
+            TurboQuantModePickerRow(selection: $settings.turboQuantMode)
+
+            Divider()
+
             KVCachePickerRow(
                 title: "KV Cache Type (K)",
                 description: "Key-cache precision for experimental TurboQuant-style tuning",
                 selection: $settings.kvCacheTypeK
             )
+            .disabled(settings.turboQuantMode != .disabled)
 
             Divider()
 
@@ -228,7 +233,41 @@ struct PerformanceSettingsSection: View {
                 description: "Value-cache precision for experimental TurboQuant-style tuning",
                 selection: $settings.kvCacheTypeV
             )
+            .disabled(settings.turboQuantMode != .disabled)
 
+        }
+    }
+}
+
+private struct TurboQuantModePickerRow: View {
+    @Binding var selection: RuntimePreferences.TurboQuantMode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("TurboQuant Mode")
+                .font(.system(size: 16, weight: .medium))
+            Text("Google TurboQuant-inspired KV presets. Balanced/Aggressive override manual K/V selectors.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            Picker("TurboQuant Mode", selection: $selection) {
+                ForEach(RuntimePreferences.TurboQuantMode.allCases, id: \.self) { mode in
+                    Text(label(for: mode)).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func label(for mode: RuntimePreferences.TurboQuantMode) -> String {
+        switch mode {
+        case .disabled:
+            return "Disabled (Manual)"
+        case .googleTurboQuantBalanced:
+            return "Google TurboQuant Balanced"
+        case .googleTurboQuantAggressive:
+            return "Google TurboQuant Aggressive"
         }
     }
 }
