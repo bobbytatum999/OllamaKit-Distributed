@@ -1366,59 +1366,75 @@ struct GGUFFileRow: View {
     let downloadAction: () -> Void
     
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(file.displayName)
-                    .font(.system(size: 15, weight: .medium))
-                    .lineLimit(1)
-                
-                HStack(spacing: 8) {
-                    if let quant = file.quantization {
-                        Label(quant, systemImage: "cpu")
-                            .font(.system(size: 12))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(file.displayName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .lineLimit(2)
+
+                    HStack(spacing: 8) {
+                        if let quant = file.quantization {
+                            ModelBadge(text: quant, systemImage: "cpu")
+                        }
+
+                        if let size = file.size {
+                            ModelBadge(
+                                text: ByteCountFormatter.string(fromByteCount: size, countStyle: .file),
+                                systemImage: "externaldrive"
+                            )
+                        }
                     }
-                    
-                    if let size = file.size {
-                        Text("•")
-                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                            .font(.system(size: 12))
+                }
+
+                Spacer(minLength: 8)
+
+                CompatibilityBadge(compatibility: compatibility)
+            }
+
+            if viewModel.isDownloading && viewModel.downloadingFile?.url == file.url {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Downloading…")
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Text("\(viewModel.downloadProgress)%")
+                            .font(.system(size: 13, weight: .semibold))
                     }
 
-                    CompatibilityBadge(compatibility: compatibility)
-                }
-                .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-            
-            if viewModel.isDownloading && viewModel.downloadingFile?.url == file.url {
-                HStack(spacing: 8) {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("\(viewModel.downloadProgress)%")
-                            .font(.system(size: 12, weight: .medium))
-                        
-                        ProgressView(value: Double(viewModel.downloadProgress) / 100.0)
-                            .frame(width: 60)
-                    }
+                    ProgressView(value: Double(viewModel.downloadProgress) / 100.0)
 
                     Button {
                         viewModel.cancelCurrentDownload()
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(.secondary)
+                        Label("Cancel Download", systemImage: "xmark.circle.fill")
+                            .font(.system(size: 14, weight: .medium))
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.bordered)
                 }
             } else {
                 Button(action: downloadAction) {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(Color.accentColor)
+                    Label("Download", systemImage: "arrow.down.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(viewModel.isDownloading)
             }
         }
-        .padding(.vertical, 4)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 0.5)
+                )
+        )
+        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 }
 
