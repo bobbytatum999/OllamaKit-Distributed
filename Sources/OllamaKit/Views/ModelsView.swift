@@ -1122,15 +1122,7 @@ struct SearchResultRow: View {
             viewModel.selectedModel = model
         } label: {
             HStack(spacing: 16) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 50, height: 50)
-                    
-                    Image(systemName: "cube")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Color.accentColor)
-                }
+                HuggingFaceAvatarView(model: model, size: 50, cornerRadius: 12)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(model.displayName)
@@ -1207,13 +1199,21 @@ struct ModelDetailSheet: View {
                     // Model Info
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(model.displayName)
-                                .font(.system(size: 24, weight: .bold))
-                            
-                            Text(model.organization)
-                                .font(.system(size: 17))
-                                .foregroundStyle(.secondary)
-                            
+                            HStack(spacing: 12) {
+                                HuggingFaceAvatarView(model: model, size: 54, cornerRadius: 14)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(model.displayName)
+                                        .font(.system(size: 24, weight: .bold))
+
+                                    Text(model.organization)
+                                        .font(.system(size: 17))
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+                            }
+
                             if let description = model.description {
                                 Text(description)
                                     .font(.system(size: 15))
@@ -1329,6 +1329,53 @@ struct ModelDetailSheet: View {
             return String(format: "%.1fk", Double(num) / 1_000)
         }
         return "\(num)"
+    }
+}
+
+private struct HuggingFaceAvatarView: View {
+    let model: HuggingFaceModel
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    private var organizationHandle: String? {
+        let base = model.author?.nonEmpty ?? model.organization.nonEmpty
+        guard let base else { return nil }
+        return base
+            .split(separator: "/")
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var avatarURL: URL? {
+        guard let handle = organizationHandle?.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        return URL(string: "https://huggingface.co/\(handle)/avatar")
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(.ultraThinMaterial)
+                .frame(width: size, height: size)
+
+            AsyncImage(url: avatarURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: size, height: size)
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                default:
+                    Image(systemName: "cube")
+                        .font(.system(size: size * 0.4, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+        }
+        .frame(width: size, height: size)
     }
 }
 
