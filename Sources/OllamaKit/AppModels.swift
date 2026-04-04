@@ -246,6 +246,138 @@ final class ServerLogStore: ObservableObject {
     }
 }
 
+enum AppLogLevel: String, Codable, CaseIterable, Identifiable {
+    case debug
+    case info
+    case warning
+    case error
+
+    var id: String { rawValue }
+}
+
+enum AppLogCategory: String, Codable, CaseIterable, Identifiable {
+    case app
+    case chat
+    case model
+    case modelsCatalog = "models_catalog"
+    case huggingFace = "huggingface"
+    case settings
+
+    var id: String { rawValue }
+}
+
+struct AppLogEntry: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    let timestamp: Date
+    let level: AppLogLevel
+    let category: AppLogCategory
+    let title: String
+    let message: String
+    let metadata: [String: String]
+    let body: String?
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = .now,
+        level: AppLogLevel = .info,
+        category: AppLogCategory,
+        title: String,
+        message: String,
+        metadata: [String: String] = [:],
+        body: String? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.level = level
+        self.category = category
+        self.title = title
+        self.message = message
+        self.metadata = metadata
+        self.body = body?.nonEmpty
+    }
+}
+
+@MainActor
+final class AppLogStore: ObservableObject {
+    static let shared = AppLogStore()
+    private static let storageURL = AppPersistencePaths.logsDirectoryURL.appendingPathComponent("app-log-buffer.json")
+    private let maxEntries = 1200
+
+    @Published private(set) var entries: [AppLogEntry] = []
+
+    var retentionLimit: Int { maxEntries }
+    var storageLocationDescription: String { "Application Support/Logs/app-log-buffer.json" }
+    var storagePath: String { Self.storageURL.path }
+    var persistenceSummary: String { "Stored on device. Keeps the latest \(maxEntries) app/model/chat entries until you clear them." }
+
+    private init() {
+        entries = PersistentJSONStore.load([AppLogEntry].self, from: Self.storageURL, fallback: []).map(Self.sanitized)
+    }
+
+    func record(
+        _ category: AppLogCategory,
+        level: AppLogLevel = .info,
+        title: String,
+        message: String,
+        metadata: [String: String] = [:],
+        body: String? = nil
+    ) {
+        entries.append(
+            Self.sanitized(
+                AppLogEntry(
+                level: level,
+                category: category,
+                title: title,
+                message: message,
+                metadata: metadata,
+                body: body
+                )
+            )
+        )
+        let overflow = entries.count - maxEntries
+        if overflow > 0 {
+            entries.removeFirst(overflow)
+        }
+        persist()
+    }
+
+    func clear() {
+        entries.removeAll()
+        persist()
+    }
+
+    func exportText() -> String {
+        entries.map { entry in
+            let timestamp = ISO8601DateFormatter().string(from: entry.timestamp)
+            let metadataText = entry.metadata
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: " ")
+            let metadataSuffix = metadataText.isEmpty ? "" : "\n\(metadataText)"
+            let bodySuffix = entry.body.map { "\n\($0)" } ?? ""
+            return "[\(timestamp)] [\(entry.level.rawValue.uppercased())] [\(entry.category.rawValue)] \(entry.title)\n\(entry.message)\(metadataSuffix)\(bodySuffix)"
+        }
+        .joined(separator: "\n\n")
+    }
+
+    private func persist() {
+        PersistentJSONStore.save(entries, to: Self.storageURL)
+    }
+
+    private static func sanitized(_ entry: AppLogEntry) -> AppLogEntry {
+        AppLogEntry(
+            id: entry.id,
+            timestamp: entry.timestamp,
+            level: entry.level,
+            category: entry.category,
+            title: PersistentLogRedactor.redact(entry.title) ?? entry.title,
+            message: PersistentLogRedactor.redact(entry.message) ?? entry.message,
+            metadata: PersistentLogRedactor.redact(metadata: entry.metadata),
+            body: PersistentLogRedactor.redact(entry.body)
+        )
+    }
+}
+
 @Model
 final class DownloadedModel {
     var id: UUID

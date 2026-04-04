@@ -48,6 +48,13 @@ struct SettingsView: View {
                         DataManagementSection()
                     }
 
+                    SurfaceSectionCard(
+                        title: "App Activity Logs",
+                        footer: "Includes chat and model runtime events. Server/API logs remain in the Server panel."
+                    ) {
+                        AppActivityLogsSection()
+                    }
+
                     SurfaceSectionCard {
                         AboutSection()
                     }
@@ -573,6 +580,214 @@ struct DataManagementSection: View {
         } message: {
             Text("This will permanently delete all downloaded and imported models. You'll need to add them again to use them.")
         }
+    }
+}
+
+struct AppActivityLogsSection: View {
+    @ObservedObject private var logStore = AppLogStore.shared
+    @State private var liveUpdates = true
+    @State private var displayedEntries: [AppLogEntry] = []
+    @State private var searchText = ""
+    @State private var selectedCategory: AppLogCategory?
+
+    private var filteredEntries: [AppLogEntry] {
+        displayedEntries.filter { entry in
+            let matchesCategory = selectedCategory.map { entry.category == $0 } ?? true
+            let needle = searchText.trimmedForLookup.lowercased()
+            guard !needle.isEmpty else { return matchesCategory }
+
+            let haystack = [
+                entry.title,
+                entry.message,
+                entry.body ?? "",
+                entry.category.rawValue,
+                entry.level.rawValue
+            ].joined(separator: " ").lowercased()
+            return matchesCategory && haystack.contains(needle)
+        }
+    }
+
+    private var exportedLogText: String {
+        filteredEntries.map(renderEntry).joined(separator: "\n\n")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                TextField("Search app logs", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(.ultraThinMaterial)
+                    )
+
+                Menu {
+                    Button("All Categories") { selectedCategory = nil }
+                    ForEach(AppLogCategory.allCases) { category in
+                        Button(category.rawValue.replacingOccurrences(of: "_", with: " ").capitalized) {
+                            selectedCategory = category
+                        }
+                    }
+                } label: {
+                    Label(selectedCategoryLabel, systemImage: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(.ultraThinMaterial)
+                        )
+                }
+            }
+
+            HStack(spacing: 12) {
+                Toggle("Live", isOn: $liveUpdates)
+                    .font(.system(size: 13, weight: .medium))
+
+                Spacer()
+
+                Button("Copy") {
+                    UIPasteboard.general.string = exportedLogText
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .disabled(filteredEntries.isEmpty)
+
+                ShareLink(
+                    item: exportedLogText,
+                    subject: Text("OllamaKit App Logs"),
+                    message: Text("Exported app/model/chat logs from OllamaKit.")
+                ) {
+                    Text("Export")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .disabled(filteredEntries.isEmpty)
+
+                Button("Clear") {
+                    logStore.clear()
+                    displayedEntries = []
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.red)
+            }
+
+            Text(logStore.persistenceSummary)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            ScrollView {
+                VStack(spacing: 10) {
+                    if filteredEntries.isEmpty {
+                        Text("No app activity log entries yet.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 12)
+                    } else {
+                        ForEach(filteredEntries.suffix(100)) { entry in
+                            AppLogEntryRow(entry: entry)
+                        }
+                    }
+                }
+            }
+            .frame(minHeight: 240, maxHeight: 360)
+        }
+        .onAppear {
+            displayedEntries = logStore.entries
+        }
+        .onChange(of: logStore.entries) { _, newValue in
+            if liveUpdates {
+                displayedEntries = newValue
+            }
+        }
+        .onChange(of: liveUpdates) { _, newValue in
+            if newValue {
+                displayedEntries = logStore.entries
+            }
+        }
+    }
+
+    private var selectedCategoryLabel: String {
+        guard let selectedCategory else { return "Category" }
+        return selectedCategory.rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private func renderEntry(_ entry: AppLogEntry) -> String {
+        let timestamp = ISO8601DateFormatter().string(from: entry.timestamp)
+        let metadata = entry.metadata
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: " ")
+        let metadataPart = metadata.isEmpty ? "" : "\n\(metadata)"
+        let bodyPart = entry.body.map { "\n\($0)" } ?? ""
+        return "[\(timestamp)] [\(entry.level.rawValue.uppercased())] [\(entry.category.rawValue)] \(entry.title)\n\(entry.message)\(metadataPart)\(bodyPart)"
+    }
+}
+
+struct AppLogEntryRow: View {
+    let entry: AppLogEntry
+
+    private var tint: Color {
+        switch entry.level {
+        case .debug:
+            return .secondary
+        case .info:
+            return .blue
+        case .warning:
+            return .orange
+        case .error:
+            return .red
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.title)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(entry.timestamp, style: .time)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text(entry.category.rawValue)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(tint)
+            }
+
+            Text(entry.message)
+                .font(.system(size: 12))
+
+            if !entry.metadata.isEmpty {
+                Text(entry.metadata
+                    .sorted { $0.key < $1.key }
+                    .map { "\($0.key)=\($0.value)" }
+                    .joined(separator: " "))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+            }
+
+            if let body = entry.body {
+                Text(body)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(6)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.ultraThinMaterial)
+        )
     }
 }
 
