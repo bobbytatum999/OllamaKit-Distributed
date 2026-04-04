@@ -277,9 +277,7 @@ extension RuntimePreferences {
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,
             keepModelInMemory: settings.keepModelInMemory,
-            autoOffloadMinutes: settings.autoOffloadMinutes,
-            kvCacheTypeK: settings.kvCacheTypeK,
-            kvCacheTypeV: settings.kvCacheTypeV
+            autoOffloadMinutes: settings.autoOffloadMinutes
         )
     }
 }

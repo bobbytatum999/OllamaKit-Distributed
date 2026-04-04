@@ -58,9 +58,7 @@ final class ModelRunner: ObservableObject {
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,
             keepModelInMemory: settings.keepModelInMemory,
-            autoOffloadMinutes: settings.autoOffloadMinutes,
-            kvCacheTypeK: settings.kvCacheTypeK,
-            kvCacheTypeV: settings.kvCacheTypeV
+            autoOffloadMinutes: settings.autoOffloadMinutes
         )
 
         let entry = try await RuntimeCoordinator.shared.loadModel(

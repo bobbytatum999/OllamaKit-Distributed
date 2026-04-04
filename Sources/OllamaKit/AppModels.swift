@@ -925,12 +925,6 @@ final class AppSettings: ObservableObject {
     @Published var batchSize: Int { didSet { save(batchSize, for: Keys.batchSize) } }
     @Published var gpuLayers: Int { didSet { save(gpuLayers, for: Keys.gpuLayers) } }
     @Published var flashAttentionEnabled: Bool { didSet { save(flashAttentionEnabled, for: Keys.flashAttentionEnabled) } }
-    @Published var kvCacheTypeK: RuntimePreferences.KVCacheQuantization {
-        didSet { save(kvCacheTypeK.rawValue, for: Keys.kvCacheTypeK) }
-    }
-    @Published var kvCacheTypeV: RuntimePreferences.KVCacheQuantization {
-        didSet { save(kvCacheTypeV.rawValue, for: Keys.kvCacheTypeV) }
-    }
     @Published var mmapEnabled: Bool { didSet { save(mmapEnabled, for: Keys.mmapEnabled) } }
     @Published var mlockEnabled: Bool { didSet { save(mlockEnabled, for: Keys.mlockEnabled) } }
     @Published var keepModelInMemory: Bool { didSet { save(keepModelInMemory, for: Keys.keepModelInMemory) } }
@@ -1030,8 +1024,6 @@ final class AppSettings: ObservableObject {
         batchSize = defaults.object(forKey: Keys.batchSize) as? Int ?? 512
         gpuLayers = defaults.object(forKey: Keys.gpuLayers) as? Int ?? 0
         flashAttentionEnabled = defaults.object(forKey: Keys.flashAttentionEnabled) as? Bool ?? false
-        kvCacheTypeK = RuntimePreferences.KVCacheQuantization(rawValue: defaults.string(forKey: Keys.kvCacheTypeK) ?? "") ?? .float16
-        kvCacheTypeV = RuntimePreferences.KVCacheQuantization(rawValue: defaults.string(forKey: Keys.kvCacheTypeV) ?? "") ?? .float16
         mmapEnabled = defaults.object(forKey: Keys.mmapEnabled) as? Bool ?? true
         mlockEnabled = defaults.object(forKey: Keys.mlockEnabled) as? Bool ?? false
         keepModelInMemory = defaults.object(forKey: Keys.keepModelInMemory) as? Bool ?? false
@@ -1189,8 +1181,6 @@ final class AppSettings: ObservableObject {
         batchSize = 512
         gpuLayers = 0
         flashAttentionEnabled = false
-        kvCacheTypeK = .float16
-        kvCacheTypeV = .float16
         mmapEnabled = true
         mlockEnabled = false
         keepModelInMemory = false
@@ -1308,8 +1298,6 @@ final class AppSettings: ObservableObject {
         static let batchSize = "batchSize"
         static let gpuLayers = "gpuLayers"
         static let flashAttentionEnabled = "flashAttentionEnabled"
-        static let kvCacheTypeK = "kvCacheTypeK"
-        static let kvCacheTypeV = "kvCacheTypeV"
         static let mmapEnabled = "mmapEnabled"
         static let mlockEnabled = "mlockEnabled"
         static let keepModelInMemory = "keepModelInMemory"

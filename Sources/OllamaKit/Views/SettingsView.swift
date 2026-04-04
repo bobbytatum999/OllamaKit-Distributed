@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import OllamaCore
 
 private let huggingFaceTokensURL = URL(string: "https://huggingface.co/settings/tokens")
 private let githubHomepageURL = URL(string: "https://github.com")
@@ -213,25 +212,6 @@ struct PerformanceSettingsSection: View {
             }
             .padding(.vertical, 12)
 
-            Divider()
-
-            Picker("KV Cache Type (K)", selection: $settings.kvCacheTypeK) {
-                ForEach(RuntimePreferences.KVCacheQuantization.allCases, id: \.self) { option in
-                    Text(option.displayName).tag(option)
-                }
-            }
-            .pickerStyle(.menu)
-            .padding(.vertical, 12)
-
-            Divider()
-
-            Picker("KV Cache Type (V)", selection: $settings.kvCacheTypeV) {
-                ForEach(RuntimePreferences.KVCacheQuantization.allCases, id: \.self) { option in
-                    Text(option.displayName).tag(option)
-                }
-            }
-            .pickerStyle(.menu)
-            .padding(.vertical, 12)
         }
     }
 }

@@ -38,9 +38,7 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             batchSize: runtime.batchSize,
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
-            mlockEnabled: runtime.mlockEnabled,
-            kvCacheTypeK: runtime.kvCacheTypeK,
-            kvCacheTypeV: runtime.kvCacheTypeV
+            mlockEnabled: runtime.mlockEnabled
         )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -82,9 +80,7 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             batchSize: runtime.batchSize,
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
-            mlockEnabled: runtime.mlockEnabled,
-            kvCacheTypeK: runtime.kvCacheTypeK,
-            kvCacheTypeV: runtime.kvCacheTypeV
+            mlockEnabled: runtime.mlockEnabled
         )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -263,8 +259,6 @@ private struct BackendConfiguration: Equatable {
     let flashAttentionEnabled: Bool
     let mmapEnabled: Bool
     let mlockEnabled: Bool
-    let kvCacheTypeK: RuntimePreferences.KVCacheQuantization
-    let kvCacheTypeV: RuntimePreferences.KVCacheQuantization
 }
 
 private extension NSLock {
@@ -320,15 +314,6 @@ private final class BackendEngine {
         contextParams.n_threads_batch = Int32(configuration.threads)
         contextParams.flash_attn_type = configuration.flashAttentionEnabled ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED
         contextParams.no_perf = false
-        // NOTE:
-        // We intentionally do not set contextParams.type_k/type_v here yet.
-        // The bundled llama snapshots used by different build variants do not
-        // consistently expose those fields/constants in generated Swift module
-        // interfaces, which causes hard compile failures on some environments.
-        //
-        // We still carry kvCacheTypeK/kvCacheTypeV through runtime configuration
-        // so the app/UI/persistence surface is ready. The low-level assignment
-        // should be enabled once all bundled llama variants are aligned.
 
         #if targetEnvironment(simulator)
         contextParams.offload_kqv = false

@@ -895,32 +895,6 @@ public struct LegacyDownloadedModelSeed: Sendable {
 }
 
 public struct RuntimePreferences: Hashable, Sendable {
-    public enum KVCacheQuantization: String, CaseIterable, Hashable, Sendable {
-        case float16
-        case float32
-        case q8_0
-        case q6_k
-        case q5_0
-        case q4_0
-
-        public var displayName: String {
-            switch self {
-            case .float16:
-                return "F16 (Default)"
-            case .float32:
-                return "F32 (Highest Quality)"
-            case .q8_0:
-                return "Q8_0"
-            case .q6_k:
-                return "Q6_K"
-            case .q5_0:
-                return "Q5_0"
-            case .q4_0:
-                return "Q4_0 (Most Aggressive)"
-            }
-        }
-    }
-
     public var contextLength: Int
     public var gpuLayers: Int
     public var threads: Int
@@ -930,8 +904,6 @@ public struct RuntimePreferences: Hashable, Sendable {
     public var mlockEnabled: Bool
     public var keepModelInMemory: Bool
     public var autoOffloadMinutes: Int
-    public var kvCacheTypeK: KVCacheQuantization
-    public var kvCacheTypeV: KVCacheQuantization
 
     public init(
         contextLength: Int = 4096,
@@ -942,9 +914,7 @@ public struct RuntimePreferences: Hashable, Sendable {
         mmapEnabled: Bool = true,
         mlockEnabled: Bool = false,
         keepModelInMemory: Bool = false,
-        autoOffloadMinutes: Int = 5,
-        kvCacheTypeK: KVCacheQuantization = .float16,
-        kvCacheTypeV: KVCacheQuantization = .float16
+        autoOffloadMinutes: Int = 5
     ) {
         self.contextLength = max(contextLength, 512)
         self.gpuLayers = max(gpuLayers, 0)
@@ -955,8 +925,6 @@ public struct RuntimePreferences: Hashable, Sendable {
         self.mlockEnabled = mlockEnabled
         self.keepModelInMemory = keepModelInMemory
         self.autoOffloadMinutes = max(autoOffloadMinutes, 1)
-        self.kvCacheTypeK = kvCacheTypeK
-        self.kvCacheTypeV = kvCacheTypeV
     }
 
     public static func validationBaseline(contextLength: Int = 2048) -> RuntimePreferences {
@@ -969,9 +937,7 @@ public struct RuntimePreferences: Hashable, Sendable {
             mmapEnabled: true,
             mlockEnabled: false,
             keepModelInMemory: false,
-            autoOffloadMinutes: 1,
-            kvCacheTypeK: .float16,
-            kvCacheTypeV: .float16
+            autoOffloadMinutes: 1
         )
     }
 }
