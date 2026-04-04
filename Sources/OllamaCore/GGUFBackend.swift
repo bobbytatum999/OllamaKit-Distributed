@@ -320,10 +320,8 @@ private final class BackendEngine {
         contextParams.n_threads_batch = Int32(configuration.threads)
         contextParams.flash_attn_type = configuration.flashAttentionEnabled ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED
         contextParams.no_perf = false
-        // KV cache quantization settings are intentionally carried in runtime configuration
-        // so we can map them onto llama.cpp context params when all build variants expose
-        // stable type_k/type_v bindings. This keeps the settings/API surface ready for
-        // TurboQuant-style KV work without breaking older runtime snapshots.
+        contextParams.type_k = Self.ggmlType(for: configuration.kvCacheTypeK)
+        contextParams.type_v = Self.ggmlType(for: configuration.kvCacheTypeV)
 
         #if targetEnvironment(simulator)
         contextParams.offload_kqv = false
@@ -470,6 +468,23 @@ private final class BackendEngine {
             guard !backendInitialized else { return }
             llama_backend_init()
             backendInitialized = true
+        }
+    }
+
+    private static func ggmlType(for quantization: RuntimePreferences.KVCacheQuantization) -> ggml_type {
+        switch quantization {
+        case .float16:
+            return GGML_TYPE_F16
+        case .float32:
+            return GGML_TYPE_F32
+        case .q8_0:
+            return GGML_TYPE_Q8_0
+        case .q6_k:
+            return GGML_TYPE_Q6_K
+        case .q5_0:
+            return GGML_TYPE_Q5_0
+        case .q4_0:
+            return GGML_TYPE_Q4_0
         }
     }
 
