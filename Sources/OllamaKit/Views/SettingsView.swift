@@ -59,6 +59,13 @@ struct SettingsView: View {
                         ModelPerformanceSection()
                     }
 
+                    SurfaceSectionCard(
+                        title: "Benchmark",
+                        footer: "Runs a quick on-device generation benchmark against a runnable model."
+                    ) {
+                        BenchmarkSection()
+                    }
+
                     SurfaceSectionCard(title: "Data Management") {
                         DataManagementSection()
                     }
@@ -807,6 +814,117 @@ struct ModelPerformanceSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 220)
+        }
+    }
+}
+
+struct BenchmarkSection: View {
+    @StateObject private var modelStore = ModelStorage.shared
+    @State private var isRunning = false
+    @State private var status = "Idle"
+    @State private var lastResult: String?
+    @State private var lastError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Quick Model Benchmark")
+                    .font(.system(size: 16, weight: .medium))
+                Spacer()
+                Button(isRunning ? "Running…" : "Run") {
+                    Task { await runBenchmark() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isRunning)
+            }
+
+            Text(status)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            if let lastResult {
+                Text(lastResult)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastError {
+                Text(lastError)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(.vertical, 12)
+    }
+
+    @MainActor
+    private func runBenchmark() async {
+        isRunning = true
+        status = "Refreshing model list…"
+        lastError = nil
+        defer { isRunning = false }
+
+        await modelStore.refresh()
+        let candidates = modelStore.selectionSnapshots.filter { $0.canBeSelectedForChat && $0.isValidatedRunnable }
+        guard let model = candidates.first else {
+            status = "No runnable model available for benchmark."
+            return
+        }
+
+        let loadStart = CFAbsoluteTimeGetCurrent()
+        do {
+            status = "Loading \(model.displayName)…"
+            try await ModelRunner.shared.loadModel(
+                catalogId: model.catalogId,
+                contextLength: model.runtimeContextLength,
+                gpuLayers: AppSettings.shared.gpuLayers
+            )
+            let loadMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+
+            status = "Generating benchmark response…"
+            let result = try await ModelRunner.shared.generate(
+                prompt: "Write a concise benchmark response.",
+                parameters: SamplingParameters(
+                    temperature: 0.2,
+                    topP: 0.9,
+                    topK: 40,
+                    repeatPenalty: 1.05,
+                    repeatLastN: 64,
+                    maxTokens: 96
+                )
+            ) { _ in }
+
+            let tokPerSec = result.generationTime > 0 ? Double(result.tokensGenerated) / result.generationTime : 0
+            status = "Benchmark completed."
+            lastResult = String(
+                format: "%@ • load %.0f ms • %d tokens in %.2f s • %.1f tok/s",
+                model.displayName,
+                loadMs,
+                result.tokensGenerated,
+                result.generationTime,
+                tokPerSec
+            )
+            AppLogStore.shared.record(
+                .runtime,
+                title: "Benchmark Completed",
+                message: "Settings benchmark finished.",
+                metadata: [
+                    "model": model.displayName,
+                    "load_ms": String(format: "%.0f", loadMs),
+                    "tokens": String(result.tokensGenerated),
+                    "generation_seconds": String(format: "%.2f", result.generationTime),
+                    "tok_per_sec": String(format: "%.1f", tokPerSec)
+                ]
+            )
+        } catch {
+            status = "Benchmark failed."
+            lastError = error.localizedDescription
+            AppLogStore.shared.record(
+                .error,
+                level: .error,
+                title: "Benchmark Failed",
+                message: error.localizedDescription
+            )
         }
     }
 }
