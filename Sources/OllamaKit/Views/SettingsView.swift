@@ -15,8 +15,11 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(spacing: 20) {
+                    SettingsHeroHeader()
+
                     SurfaceSectionCard(
                         title: "Model Parameters",
+                        icon: "slider.horizontal.3",
                         footer: "Default parameters for model inference. These can be overridden per chat."
                     ) {
                         ModelSettingsSection(settings: settings)
@@ -24,32 +27,35 @@ struct SettingsView: View {
 
                     SurfaceSectionCard(
                         title: "Performance",
+                        icon: "speedometer",
                         footer: "Adjust based on your device's capabilities. More GPU layers means faster inference but higher memory usage."
                     ) {
                         PerformanceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Memory Management") {
+                    SurfaceSectionCard(title: "Memory Management", icon: "memorychip") {
                         MemorySettingsSection(settings: settings)
                     }
 
                     SurfaceSectionCard(
                         title: "Hugging Face",
+                        icon: "person.crop.circle.badge.checkmark",
                         footer: "Required for accessing gated models and higher rate limits."
                     ) {
                         HuggingFaceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Interface") {
+                    SurfaceSectionCard(title: "Interface", icon: "paintpalette") {
                         InterfaceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Data Management") {
+                    SurfaceSectionCard(title: "Data Management", icon: "externaldrive") {
                         DataManagementSection()
                     }
 
                     SurfaceSectionCard(
                         title: "App Activity Logs",
+                        icon: "list.bullet.rectangle.portrait",
                         footer: "Includes chat and model runtime events. Server/API logs remain in the Server panel."
                     ) {
                         AppActivityLogsSection()
@@ -94,6 +100,47 @@ struct SettingsView: View {
         } message: {
             Text("This will reset all settings to their default values. Your downloaded models and chats will not be affected.")
         }
+    }
+}
+
+private struct SettingsHeroHeader: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [.blue.opacity(0.85), .purple.opacity(0.85)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 54, height: 54)
+
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Advanced Controls")
+                    .font(.system(size: 19, weight: .bold))
+                Text("Tune model quality, speed, memory, and runtime behavior.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                )
+        )
     }
 }
 
