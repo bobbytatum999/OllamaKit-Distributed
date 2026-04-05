@@ -59,6 +59,13 @@ struct SettingsView: View {
                         ModelPerformanceSection()
                     }
 
+                    SurfaceSectionCard(
+                        title: "Benchmark",
+                        footer: "Run a quick benchmark using the smallest runnable model on this device."
+                    ) {
+                        BenchmarkSection()
+                    }
+
                     SurfaceSectionCard(title: "Data Management") {
                         DataManagementSection()
                     }
@@ -807,6 +814,110 @@ struct ModelPerformanceSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 220)
+        }
+    }
+}
+
+struct BenchmarkSection: View {
+    @State private var runToken = 0
+    @State private var isRunning = false
+    @State private var status = "Idle"
+    @State private var resultLine = ""
+    @State private var errorLine = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Quick Benchmark")
+                    .font(.system(size: 16, weight: .medium))
+                Spacer()
+                Button(isRunning ? "Running…" : "Run") {
+                    guard !isRunning else { return }
+                    runToken += 1
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isRunning)
+            }
+
+            Text(status)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            if !resultLine.isEmpty {
+                Text(resultLine)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            if !errorLine.isEmpty {
+                Text(errorLine)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(.vertical, 12)
+        .task(id: runToken) {
+            guard runToken > 0 else { return }
+            await runBenchmark()
+        }
+    }
+
+    @MainActor
+    private func runBenchmark() async {
+        isRunning = true
+        status = "Refreshing models…"
+        resultLine = ""
+        errorLine = ""
+        defer { isRunning = false }
+
+        await ModelStorage.shared.refresh()
+        let candidates = ModelStorage.shared.selectionSnapshots
+            .filter { $0.canBeSelectedForChat && $0.isValidatedRunnable }
+            .sorted { $0.size < $1.size }
+
+        guard let model = candidates.first else {
+            status = "No runnable model available."
+            return
+        }
+
+        do {
+            status = "Loading \(model.displayName)…"
+            let contextLength = max(min(model.runtimeContextLength, AppSettings.shared.defaultContextLength), 512)
+            let loadStart = CFAbsoluteTimeGetCurrent()
+            try await ModelRunner.shared.loadModel(
+                catalogId: model.catalogId,
+                contextLength: contextLength,
+                gpuLayers: AppSettings.shared.gpuLayers
+            )
+            let loadMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+
+            status = "Generating sample output…"
+            let result = try await ModelRunner.shared.generate(
+                prompt: "Return a short benchmark response.",
+                parameters: SamplingParameters(
+                    temperature: 0.2,
+                    topP: 0.9,
+                    topK: 40,
+                    repeatPenalty: 1.05,
+                    repeatLastN: 64,
+                    maxTokens: 96
+                )
+            ) { _ in }
+
+            let tokPerSec = result.generationTime > 0
+                ? Double(result.tokensGenerated) / result.generationTime
+                : 0
+            status = "Benchmark complete."
+            resultLine = String(
+                format: "%@ • load %.0f ms • %d tokens • %.1f tok/s",
+                model.displayName,
+                loadMs,
+                result.tokensGenerated,
+                tokPerSec
+            )
+        } catch {
+            status = "Benchmark failed."
+            errorLine = error.localizedDescription
         }
     }
 }
