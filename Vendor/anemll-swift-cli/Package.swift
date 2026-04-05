@@ -9,7 +9,7 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "AnemllCore",
+            name: "AnemllCoreLib",
             targets: ["AnemllCore"]
         ),
     ],
