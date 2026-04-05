@@ -24,7 +24,7 @@ var targets: [Target] = [
     .target(
         name: "OllamaCore",
         dependencies: [
-            .product(name: "AnemllCoreLib", package: "anemll-swift-cli")
+            .product(name: "AnemllCore", package: "anemll-swift-cli")
         ],
         path: "Sources/OllamaCore"
     )
