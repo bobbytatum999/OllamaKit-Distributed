@@ -863,10 +863,13 @@ struct BenchmarkSection: View {
         isRunning = true
         status = "Refreshing model list…"
         lastError = nil
+        lastResult = nil
         defer { isRunning = false }
 
         await ModelStorage.shared.refresh()
-        let candidates = ModelStorage.shared.selectionSnapshots.filter { $0.canBeSelectedForChat && $0.isValidatedRunnable }
+        let candidates = ModelStorage.shared.selectionSnapshots
+            .filter { $0.canBeSelectedForChat && $0.isValidatedRunnable }
+            .sorted { $0.size < $1.size }
         guard let model = candidates.first else {
             status = "No runnable model available for benchmark."
             return
@@ -875,9 +878,13 @@ struct BenchmarkSection: View {
         let loadStart = CFAbsoluteTimeGetCurrent()
         do {
             status = "Loading \(model.displayName)…"
+            let benchmarkContextLength = max(
+                min(model.runtimeContextLength, AppSettings.shared.defaultContextLength),
+                512
+            )
             try await ModelRunner.shared.loadModel(
                 catalogId: model.catalogId,
-                contextLength: model.runtimeContextLength,
+                contextLength: benchmarkContextLength,
                 gpuLayers: AppSettings.shared.gpuLayers
             )
             let loadMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000

@@ -128,9 +128,14 @@ final class ModelRunner: ObservableObject {
         let currentSnapshot = await MainActor.run {
             ModelStorage.shared.snapshot(name: activeCatalogId)
         }
+        let preferredContextLength = max(AppSettings.shared.defaultContextLength, 512)
+        let effectiveContextLength = max(
+            min(currentSnapshot?.runtimeContextLength ?? preferredContextLength, preferredContextLength),
+            512
+        )
         let runtime = RuntimePreferences.fromSettings(
             AppSettings.shared,
-            contextLength: currentSnapshot?.runtimeContextLength
+            contextLength: effectiveContextLength
         )
 
         let result: InferenceResult

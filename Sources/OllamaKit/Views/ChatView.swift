@@ -788,9 +788,14 @@ class ChatViewModel: ObservableObject {
                 ]
             )
 
+            let effectiveContextLength = max(
+                min(model.runtimeContextLength, AppSettings.shared.defaultContextLength),
+                512
+            )
+
             try await ModelRunner.shared.loadModel(
                 catalogId: model.catalogId,
-                contextLength: model.runtimeContextLength,
+                contextLength: effectiveContextLength,
                 gpuLayers: AppSettings.shared.gpuLayers
             )
 
