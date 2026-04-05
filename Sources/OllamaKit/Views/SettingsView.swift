@@ -819,7 +819,6 @@ struct ModelPerformanceSection: View {
 }
 
 struct BenchmarkSection: View {
-    @ObservedObject private var modelStore = ModelStorage.shared
     @State private var isRunning = false
     @State private var status = "Idle"
     @State private var lastResult: String?
@@ -866,8 +865,8 @@ struct BenchmarkSection: View {
         lastError = nil
         defer { isRunning = false }
 
-        await modelStore.refresh()
-        let candidates = modelStore.selectionSnapshots.filter { $0.canBeSelectedForChat && $0.isValidatedRunnable }
+        await ModelStorage.shared.refresh()
+        let candidates = ModelStorage.shared.selectionSnapshots.filter { $0.canBeSelectedForChat && $0.isValidatedRunnable }
         guard let model = candidates.first else {
             status = "No runnable model available for benchmark."
             return
