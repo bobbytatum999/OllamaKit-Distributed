@@ -21,7 +21,7 @@ let package = Package(
         .target(
             name: "AnemllCore",
             dependencies: [
-                "Yams",
+                .product(name: "Yams", package: "Yams"),
                 .product(name: "Transformers", package: "swift-transformers"),
             ],
             path: "Sources/AnemllCore"
