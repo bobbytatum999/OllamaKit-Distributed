@@ -895,6 +895,21 @@ public struct LegacyDownloadedModelSeed: Sendable {
 }
 
 public struct RuntimePreferences: Hashable, Sendable {
+    public enum KVCacheQuantization: String, Codable, CaseIterable, Sendable {
+        case float16
+        case float32
+        case q8_0
+        case q6_K
+        case q5_0
+        case q4_0
+    }
+
+    public enum TurboQuantMode: String, Codable, CaseIterable, Sendable {
+        case disabled
+        case googleTurboQuantBalanced
+        case googleTurboQuantAggressive
+    }
+
     public var contextLength: Int
     public var gpuLayers: Int
     public var threads: Int
@@ -902,6 +917,9 @@ public struct RuntimePreferences: Hashable, Sendable {
     public var flashAttentionEnabled: Bool
     public var mmapEnabled: Bool
     public var mlockEnabled: Bool
+    public var turboQuantMode: TurboQuantMode
+    public var kvCacheTypeK: KVCacheQuantization
+    public var kvCacheTypeV: KVCacheQuantization
     public var keepModelInMemory: Bool
     public var autoOffloadMinutes: Int
 
@@ -913,6 +931,9 @@ public struct RuntimePreferences: Hashable, Sendable {
         flashAttentionEnabled: Bool = false,
         mmapEnabled: Bool = true,
         mlockEnabled: Bool = false,
+        turboQuantMode: TurboQuantMode = .disabled,
+        kvCacheTypeK: KVCacheQuantization = .float16,
+        kvCacheTypeV: KVCacheQuantization = .float16,
         keepModelInMemory: Bool = false,
         autoOffloadMinutes: Int = 5
     ) {
@@ -923,6 +944,18 @@ public struct RuntimePreferences: Hashable, Sendable {
         self.flashAttentionEnabled = flashAttentionEnabled
         self.mmapEnabled = mmapEnabled
         self.mlockEnabled = mlockEnabled
+        self.turboQuantMode = turboQuantMode
+        switch turboQuantMode {
+        case .disabled:
+            self.kvCacheTypeK = kvCacheTypeK
+            self.kvCacheTypeV = kvCacheTypeV
+        case .googleTurboQuantBalanced:
+            self.kvCacheTypeK = .q8_0
+            self.kvCacheTypeV = .q8_0
+        case .googleTurboQuantAggressive:
+            self.kvCacheTypeK = .q8_0
+            self.kvCacheTypeV = .q4_0
+        }
         self.keepModelInMemory = keepModelInMemory
         self.autoOffloadMinutes = max(autoOffloadMinutes, 1)
     }
@@ -936,6 +969,9 @@ public struct RuntimePreferences: Hashable, Sendable {
             flashAttentionEnabled: false,
             mmapEnabled: true,
             mlockEnabled: false,
+            turboQuantMode: .disabled,
+            kvCacheTypeK: .float16,
+            kvCacheTypeV: .float16,
             keepModelInMemory: false,
             autoOffloadMinutes: 1
         )
