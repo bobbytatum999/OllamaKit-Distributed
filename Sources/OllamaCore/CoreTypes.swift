@@ -895,10 +895,28 @@ public struct LegacyDownloadedModelSeed: Sendable {
 }
 
 public struct RuntimePreferences: Hashable, Sendable {
+    public enum KVCachePreset: String, CaseIterable, Sendable {
+        case platformDefault
+        case q8_0
+        case googleTurboQ4
+
+        public var title: String {
+            switch self {
+            case .platformDefault:
+                return "Default"
+            case .q8_0:
+                return "Q8_0"
+            case .googleTurboQ4:
+                return "Google Turbo (Q4_0)"
+            }
+        }
+    }
+
     public var contextLength: Int
     public var gpuLayers: Int
     public var threads: Int
     public var batchSize: Int
+    public var kvCachePreset: KVCachePreset
     public var flashAttentionEnabled: Bool
     public var mmapEnabled: Bool
     public var mlockEnabled: Bool
@@ -910,6 +928,7 @@ public struct RuntimePreferences: Hashable, Sendable {
         gpuLayers: Int = 0,
         threads: Int = 1,
         batchSize: Int = 512,
+        kvCachePreset: KVCachePreset = .platformDefault,
         flashAttentionEnabled: Bool = false,
         mmapEnabled: Bool = true,
         mlockEnabled: Bool = false,
@@ -920,6 +939,7 @@ public struct RuntimePreferences: Hashable, Sendable {
         self.gpuLayers = max(gpuLayers, 0)
         self.threads = max(threads, 1)
         self.batchSize = max(batchSize, 32)
+        self.kvCachePreset = kvCachePreset
         self.flashAttentionEnabled = flashAttentionEnabled
         self.mmapEnabled = mmapEnabled
         self.mlockEnabled = mlockEnabled
@@ -933,6 +953,7 @@ public struct RuntimePreferences: Hashable, Sendable {
             gpuLayers: 0,
             threads: max(min(ProcessInfo.processInfo.activeProcessorCount, 4), 1),
             batchSize: 128,
+            kvCachePreset: .platformDefault,
             flashAttentionEnabled: false,
             mmapEnabled: true,
             mlockEnabled: false,

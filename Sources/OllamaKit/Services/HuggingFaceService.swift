@@ -411,6 +411,7 @@ final class HuggingFaceService: @unchecked Sendable {
 
     private func extractQuantization(from filename: String) -> String? {
         let patterns = [
+            "TURBO4", "TURBO",
             "Q2_K", "Q3_K_S", "Q3_K_M", "Q3_K_L",
             "Q4_0", "Q4_K_S", "Q4_K_M",
             "Q5_0", "Q5_K_S", "Q5_K_M",
@@ -574,16 +575,18 @@ final class HuggingFaceService: @unchecked Sendable {
 
     private func quantizationRank(for quantization: String?) -> Int {
         switch quantization?.uppercased() {
-        case "Q4_K_M", "Q4_K_S", "Q4_0":
+        case "TURBO4", "TURBO":
             return 0
-        case "Q5_K_M", "Q5_K_S", "Q5_0", "Q6_K":
+        case "Q4_K_M", "Q4_K_S", "Q4_0":
             return 1
-        case "Q3_K_M", "Q3_K_S", "Q3_K_L", "Q2_K":
+        case "Q5_K_M", "Q5_K_S", "Q5_0", "Q6_K":
             return 2
-        case "Q8_0", "F16", "FP16", "FP32":
+        case "Q3_K_M", "Q3_K_S", "Q3_K_L", "Q2_K":
             return 3
-        default:
+        case "Q8_0", "F16", "FP16", "FP32":
             return 4
+        default:
+            return 5
         }
     }
 

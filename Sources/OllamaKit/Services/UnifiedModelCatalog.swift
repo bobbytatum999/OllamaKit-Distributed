@@ -273,6 +273,7 @@ extension RuntimePreferences {
             gpuLayers: settings.gpuLayers,
             threads: settings.threads,
             batchSize: settings.batchSize,
+            kvCachePreset: settings.kvCachePreset,
             flashAttentionEnabled: settings.flashAttentionEnabled,
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,

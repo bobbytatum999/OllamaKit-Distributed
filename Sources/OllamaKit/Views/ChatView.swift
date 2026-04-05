@@ -212,6 +212,15 @@ struct ChatView: View {
     }
 
     private func clearMessages() {
+        AppLogStore.shared.record(
+            .chat,
+            title: "Chat Cleared",
+            message: "Deleted all messages in chat session.",
+            metadata: [
+                "session_id": session.id.uuidString,
+                "message_count": "\(session.orderedMessages.count)"
+            ]
+        )
         for message in session.orderedMessages {
             modelContext.delete(message)
         }
@@ -224,6 +233,16 @@ struct ChatView: View {
     }
 
     private func deleteChat() {
+        AppLogStore.shared.record(
+            .chat,
+            level: .warning,
+            title: "Chat Deleted",
+            message: "Deleted chat session from local storage.",
+            metadata: [
+                "session_id": session.id.uuidString,
+                "title": session.title
+            ]
+        )
         modelContext.delete(session)
         try? modelContext.save()
         Task { @MainActor in
@@ -236,6 +255,16 @@ struct ChatView: View {
         let content = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty else { return }
 
+        AppLogStore.shared.record(
+            .chat,
+            title: "User Message Queued",
+            message: "Queued a new user message for generation.",
+            metadata: [
+                "session_id": session.id.uuidString,
+                "chars": "\(content.count)"
+            ],
+            body: content
+        )
         messageText = ""
 
         Task { @MainActor in
@@ -537,6 +566,12 @@ class ChatViewModel: ObservableObject {
     
     func sendMessage(_ content: String, in session: ChatSession, context: ModelContext) async {
         guard let model = currentModel else {
+            AppLogStore.shared.record(
+                .chat,
+                level: .error,
+                title: "Message Rejected",
+                message: "No runnable model is selected."
+            )
             errorMessage = "No runnable model is selected. Pick another validated model or re-download the missing one."
             Task { @MainActor in
                 HapticManager.notification(.error)
@@ -562,6 +597,16 @@ class ChatViewModel: ObservableObject {
 
         isGenerating = true
         streamRevision = 0
+        AppLogStore.shared.record(
+            .chat,
+            title: "Generation Started",
+            message: "Started model generation for chat session.",
+            metadata: [
+                "session_id": session.id.uuidString,
+                "model_id": model.catalogId,
+                "streaming": "\(AppSettings.shared.streamingEnabled)"
+            ]
+        )
         defer {
             isGenerating = false
         }
@@ -597,6 +642,19 @@ class ChatViewModel: ObservableObject {
             assistantMessage.tokenCount = result.tokensGenerated
             assistantMessage.generationTime = result.generationTime
             streamRevision += 1
+            AppLogStore.shared.record(
+                .chat,
+                title: "Generation Completed",
+                message: "Model generation completed.",
+                metadata: [
+                    "session_id": session.id.uuidString,
+                    "model_id": model.catalogId,
+                    "tokens": "\(result.tokensGenerated)",
+                    "seconds": String(format: "%.2f", result.generationTime),
+                    "cancelled": "\(result.wasCancelled)"
+                ],
+                body: result.text
+            )
             
             session.updatedAt = Date()
             try? context.save()
@@ -610,6 +668,16 @@ class ChatViewModel: ObservableObject {
             
         } catch {
             if isGenerationCancelled(error) {
+                AppLogStore.shared.record(
+                    .chat,
+                    level: .warning,
+                    title: "Generation Cancelled",
+                    message: "Generation was cancelled before completion.",
+                    metadata: [
+                        "session_id": session.id.uuidString,
+                        "model_id": model.catalogId
+                    ]
+                )
                 assistantMessage.isGenerating = false
                 if assistantMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     context.delete(assistantMessage)
@@ -621,6 +689,16 @@ class ChatViewModel: ObservableObject {
                 return
             }
 
+            AppLogStore.shared.record(
+                .chat,
+                level: .error,
+                title: "Generation Failed",
+                message: error.localizedDescription,
+                metadata: [
+                    "session_id": session.id.uuidString,
+                    "model_id": model.catalogId
+                ]
+            )
             errorMessage = error.localizedDescription
             assistantMessage.content = "Error: \(error.localizedDescription)"
             assistantMessage.isGenerating = false
@@ -632,6 +710,12 @@ class ChatViewModel: ObservableObject {
     }
     
     func stopGeneration() {
+        AppLogStore.shared.record(
+            .chat,
+            level: .warning,
+            title: "Stop Requested",
+            message: "User requested generation stop."
+        )
         ModelRunner.shared.stopGeneration()
         Task { @MainActor in
             HapticManager.impact(.medium)

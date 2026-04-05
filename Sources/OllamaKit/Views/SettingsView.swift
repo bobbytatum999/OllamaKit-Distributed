@@ -15,8 +15,11 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(spacing: 20) {
+                    SettingsHeroHeader()
+
                     SurfaceSectionCard(
                         title: "Model Parameters",
+                        icon: "slider.horizontal.3",
                         footer: "Default parameters for model inference. These can be overridden per chat."
                     ) {
                         ModelSettingsSection(settings: settings)
@@ -24,28 +27,38 @@ struct SettingsView: View {
 
                     SurfaceSectionCard(
                         title: "Performance",
+                        icon: "speedometer",
                         footer: "Adjust based on your device's capabilities. More GPU layers means faster inference but higher memory usage."
                     ) {
                         PerformanceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Memory Management") {
+                    SurfaceSectionCard(title: "Memory Management", icon: "memorychip") {
                         MemorySettingsSection(settings: settings)
                     }
 
                     SurfaceSectionCard(
                         title: "Hugging Face",
+                        icon: "person.crop.circle.badge.checkmark",
                         footer: "Required for accessing gated models and higher rate limits."
                     ) {
                         HuggingFaceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Interface") {
+                    SurfaceSectionCard(title: "Interface", icon: "paintpalette") {
                         InterfaceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Data Management") {
+                    SurfaceSectionCard(title: "Data Management", icon: "externaldrive") {
                         DataManagementSection()
+                    }
+
+                    SurfaceSectionCard(
+                        title: "App Activity Logs",
+                        icon: "list.bullet.rectangle.portrait",
+                        footer: "Includes chat and model runtime events. Server/API logs remain in the Server panel."
+                    ) {
+                        AppActivityLogsSection()
                     }
 
                     SurfaceSectionCard {
@@ -87,6 +100,47 @@ struct SettingsView: View {
         } message: {
             Text("This will reset all settings to their default values. Your downloaded models and chats will not be affected.")
         }
+    }
+}
+
+private struct SettingsHeroHeader: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [.blue.opacity(0.85), .purple.opacity(0.85)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 54, height: 54)
+
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Advanced Controls")
+                    .font(.system(size: 19, weight: .bold))
+                Text("Tune model quality, speed, memory, and runtime behavior.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                )
+        )
     }
 }
 
@@ -195,9 +249,30 @@ struct PerformanceSettingsSection: View {
                 title: "GPU Layers",
                 value: $settings.gpuLayers,
                 range: 0...100,
-                description: "Layers to offload to GPU"
+                description: "Layers to offload to GPU (100 = fastest on most devices)"
             )
             
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("KV Cache Quant")
+                    .font(.system(size: 16, weight: .medium))
+                Text("Default is safest. Google Turbo (Q4_0) is a community preset and may vary by model.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+
+                Picker("KV Cache Quant", selection: Binding(
+                    get: { settings.kvCachePreset },
+                    set: { settings.kvCachePreset = $0 }
+                )) {
+                    ForEach(RuntimePreferences.KVCachePreset.allCases, id: \.rawValue) { preset in
+                        Text(preset.title).tag(preset)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding(.vertical, 12)
+
             Divider()
             
             // Flash Attention
@@ -573,6 +648,214 @@ struct DataManagementSection: View {
         } message: {
             Text("This will permanently delete all downloaded and imported models. You'll need to add them again to use them.")
         }
+    }
+}
+
+struct AppActivityLogsSection: View {
+    @ObservedObject private var logStore = AppLogStore.shared
+    @State private var liveUpdates = true
+    @State private var displayedEntries: [AppLogEntry] = []
+    @State private var searchText = ""
+    @State private var selectedCategory: AppLogCategory?
+
+    private var filteredEntries: [AppLogEntry] {
+        displayedEntries.filter { entry in
+            let matchesCategory = selectedCategory.map { entry.category == $0 } ?? true
+            let needle = searchText.trimmedForLookup.lowercased()
+            guard !needle.isEmpty else { return matchesCategory }
+
+            let haystack = [
+                entry.title,
+                entry.message,
+                entry.body ?? "",
+                entry.category.rawValue,
+                entry.level.rawValue
+            ].joined(separator: " ").lowercased()
+            return matchesCategory && haystack.contains(needle)
+        }
+    }
+
+    private var exportedLogText: String {
+        filteredEntries.map(renderEntry).joined(separator: "\n\n")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                TextField("Search app logs", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(.ultraThinMaterial)
+                    )
+
+                Menu {
+                    Button("All Categories") { selectedCategory = nil }
+                    ForEach(AppLogCategory.allCases) { category in
+                        Button(category.rawValue.replacingOccurrences(of: "_", with: " ").capitalized) {
+                            selectedCategory = category
+                        }
+                    }
+                } label: {
+                    Label(selectedCategoryLabel, systemImage: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(.ultraThinMaterial)
+                        )
+                }
+            }
+
+            HStack(spacing: 12) {
+                Toggle("Live", isOn: $liveUpdates)
+                    .font(.system(size: 13, weight: .medium))
+
+                Spacer()
+
+                Button("Copy") {
+                    UIPasteboard.general.string = exportedLogText
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .disabled(filteredEntries.isEmpty)
+
+                ShareLink(
+                    item: exportedLogText,
+                    subject: Text("OllamaKit App Logs"),
+                    message: Text("Exported app/model/chat logs from OllamaKit.")
+                ) {
+                    Text("Export")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .disabled(filteredEntries.isEmpty)
+
+                Button("Clear") {
+                    logStore.clear()
+                    displayedEntries = []
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.red)
+            }
+
+            Text(logStore.persistenceSummary)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            ScrollView {
+                VStack(spacing: 10) {
+                    if filteredEntries.isEmpty {
+                        Text("No app activity log entries yet.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 12)
+                    } else {
+                        ForEach(filteredEntries.suffix(100)) { entry in
+                            AppLogEntryRow(entry: entry)
+                        }
+                    }
+                }
+            }
+            .frame(minHeight: 240, maxHeight: 360)
+        }
+        .onAppear {
+            displayedEntries = logStore.entries
+        }
+        .onChange(of: logStore.entries) { _, newValue in
+            if liveUpdates {
+                displayedEntries = newValue
+            }
+        }
+        .onChange(of: liveUpdates) { _, newValue in
+            if newValue {
+                displayedEntries = logStore.entries
+            }
+        }
+    }
+
+    private var selectedCategoryLabel: String {
+        guard let selectedCategory else { return "Category" }
+        return selectedCategory.rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private func renderEntry(_ entry: AppLogEntry) -> String {
+        let timestamp = ISO8601DateFormatter().string(from: entry.timestamp)
+        let metadata = entry.metadata
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: " ")
+        let metadataPart = metadata.isEmpty ? "" : "\n\(metadata)"
+        let bodyPart = entry.body.map { "\n\($0)" } ?? ""
+        return "[\(timestamp)] [\(entry.level.rawValue.uppercased())] [\(entry.category.rawValue)] \(entry.title)\n\(entry.message)\(metadataPart)\(bodyPart)"
+    }
+}
+
+struct AppLogEntryRow: View {
+    let entry: AppLogEntry
+
+    private var tint: Color {
+        switch entry.level {
+        case .debug:
+            return .secondary
+        case .info:
+            return .blue
+        case .warning:
+            return .orange
+        case .error:
+            return .red
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.title)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(entry.timestamp, style: .time)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text(entry.category.rawValue)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(tint)
+            }
+
+            Text(entry.message)
+                .font(.system(size: 12))
+
+            if !entry.metadata.isEmpty {
+                Text(entry.metadata
+                    .sorted { $0.key < $1.key }
+                    .map { "\($0.key)=\($0.value)" }
+                    .joined(separator: " "))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+            }
+
+            if let body = entry.body {
+                Text(body)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(6)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.ultraThinMaterial)
+        )
     }
 }
 

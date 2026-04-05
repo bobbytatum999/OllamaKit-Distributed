@@ -246,6 +246,138 @@ final class ServerLogStore: ObservableObject {
     }
 }
 
+enum AppLogLevel: String, Codable, CaseIterable, Identifiable {
+    case debug
+    case info
+    case warning
+    case error
+
+    var id: String { rawValue }
+}
+
+enum AppLogCategory: String, Codable, CaseIterable, Identifiable {
+    case app
+    case chat
+    case model
+    case modelsCatalog = "models_catalog"
+    case huggingFace = "huggingface"
+    case settings
+
+    var id: String { rawValue }
+}
+
+struct AppLogEntry: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    let timestamp: Date
+    let level: AppLogLevel
+    let category: AppLogCategory
+    let title: String
+    let message: String
+    let metadata: [String: String]
+    let body: String?
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = .now,
+        level: AppLogLevel = .info,
+        category: AppLogCategory,
+        title: String,
+        message: String,
+        metadata: [String: String] = [:],
+        body: String? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.level = level
+        self.category = category
+        self.title = title
+        self.message = message
+        self.metadata = metadata
+        self.body = body?.nonEmpty
+    }
+}
+
+@MainActor
+final class AppLogStore: ObservableObject {
+    static let shared = AppLogStore()
+    private static let storageURL = AppPersistencePaths.logsDirectoryURL.appendingPathComponent("app-log-buffer.json")
+    private let maxEntries = 1200
+
+    @Published private(set) var entries: [AppLogEntry] = []
+
+    var retentionLimit: Int { maxEntries }
+    var storageLocationDescription: String { "Application Support/Logs/app-log-buffer.json" }
+    var storagePath: String { Self.storageURL.path }
+    var persistenceSummary: String { "Stored on device. Keeps the latest \(maxEntries) app/model/chat entries until you clear them." }
+
+    private init() {
+        entries = PersistentJSONStore.load([AppLogEntry].self, from: Self.storageURL, fallback: []).map(Self.sanitized)
+    }
+
+    func record(
+        _ category: AppLogCategory,
+        level: AppLogLevel = .info,
+        title: String,
+        message: String,
+        metadata: [String: String] = [:],
+        body: String? = nil
+    ) {
+        entries.append(
+            Self.sanitized(
+                AppLogEntry(
+                level: level,
+                category: category,
+                title: title,
+                message: message,
+                metadata: metadata,
+                body: body
+                )
+            )
+        )
+        let overflow = entries.count - maxEntries
+        if overflow > 0 {
+            entries.removeFirst(overflow)
+        }
+        persist()
+    }
+
+    func clear() {
+        entries.removeAll()
+        persist()
+    }
+
+    func exportText() -> String {
+        entries.map { entry in
+            let timestamp = ISO8601DateFormatter().string(from: entry.timestamp)
+            let metadataText = entry.metadata
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: " ")
+            let metadataSuffix = metadataText.isEmpty ? "" : "\n\(metadataText)"
+            let bodySuffix = entry.body.map { "\n\($0)" } ?? ""
+            return "[\(timestamp)] [\(entry.level.rawValue.uppercased())] [\(entry.category.rawValue)] \(entry.title)\n\(entry.message)\(metadataSuffix)\(bodySuffix)"
+        }
+        .joined(separator: "\n\n")
+    }
+
+    private func persist() {
+        PersistentJSONStore.save(entries, to: Self.storageURL)
+    }
+
+    private static func sanitized(_ entry: AppLogEntry) -> AppLogEntry {
+        AppLogEntry(
+            id: entry.id,
+            timestamp: entry.timestamp,
+            level: entry.level,
+            category: entry.category,
+            title: PersistentLogRedactor.redact(entry.title) ?? entry.title,
+            message: PersistentLogRedactor.redact(entry.message) ?? entry.message,
+            metadata: PersistentLogRedactor.redact(metadata: entry.metadata),
+            body: PersistentLogRedactor.redact(entry.body)
+        )
+    }
+}
+
 @Model
 final class DownloadedModel {
     var id: UUID
@@ -912,6 +1044,7 @@ enum ModelPathHelper {
 
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
+    private static let recommendedGPULayers = 100
 
     @Published var defaultTemperature: Double { didSet { save(defaultTemperature, for: Keys.defaultTemperature) } }
     @Published var defaultTopP: Double { didSet { save(defaultTopP, for: Keys.defaultTopP) } }
@@ -924,6 +1057,7 @@ final class AppSettings: ObservableObject {
     @Published var threads: Int { didSet { save(threads, for: Keys.threads) } }
     @Published var batchSize: Int { didSet { save(batchSize, for: Keys.batchSize) } }
     @Published var gpuLayers: Int { didSet { save(gpuLayers, for: Keys.gpuLayers) } }
+    @Published var kvCachePresetRaw: String { didSet { save(kvCachePresetRaw, for: Keys.kvCachePresetRaw) } }
     @Published var flashAttentionEnabled: Bool { didSet { save(flashAttentionEnabled, for: Keys.flashAttentionEnabled) } }
     @Published var mmapEnabled: Bool { didSet { save(mmapEnabled, for: Keys.mmapEnabled) } }
     @Published var mlockEnabled: Bool { didSet { save(mlockEnabled, for: Keys.mlockEnabled) } }
@@ -1022,7 +1156,8 @@ final class AppSettings: ObservableObject {
 
         threads = defaults.object(forKey: Keys.threads) as? Int ?? max(ProcessInfo.processInfo.processorCount - 1, 1)
         batchSize = defaults.object(forKey: Keys.batchSize) as? Int ?? 512
-        gpuLayers = defaults.object(forKey: Keys.gpuLayers) as? Int ?? 0
+        gpuLayers = defaults.object(forKey: Keys.gpuLayers) as? Int ?? Self.recommendedGPULayers
+        kvCachePresetRaw = defaults.string(forKey: Keys.kvCachePresetRaw) ?? RuntimePreferences.KVCachePreset.platformDefault.rawValue
         flashAttentionEnabled = defaults.object(forKey: Keys.flashAttentionEnabled) as? Bool ?? false
         mmapEnabled = defaults.object(forKey: Keys.mmapEnabled) as? Bool ?? true
         mlockEnabled = defaults.object(forKey: Keys.mlockEnabled) as? Bool ?? false
@@ -1110,6 +1245,15 @@ final class AppSettings: ObservableObject {
         serverExposureMode.allowsRemoteConnections
     }
 
+    var kvCachePreset: RuntimePreferences.KVCachePreset {
+        get {
+            RuntimePreferences.KVCachePreset(rawValue: kvCachePresetRaw) ?? .platformDefault
+        }
+        set {
+            kvCachePresetRaw = newValue.rawValue
+        }
+    }
+
     var normalizedPublicBaseURL: String? {
         Self.sanitizedPublicBaseURL(from: publicBaseURL)
     }
@@ -1179,7 +1323,8 @@ final class AppSettings: ObservableObject {
 
         threads = max(ProcessInfo.processInfo.processorCount - 1, 1)
         batchSize = 512
-        gpuLayers = 0
+        gpuLayers = Self.recommendedGPULayers
+        kvCachePresetRaw = RuntimePreferences.KVCachePreset.platformDefault.rawValue
         flashAttentionEnabled = false
         mmapEnabled = true
         mlockEnabled = false
@@ -1297,6 +1442,7 @@ final class AppSettings: ObservableObject {
         static let threads = "threads"
         static let batchSize = "batchSize"
         static let gpuLayers = "gpuLayers"
+        static let kvCachePresetRaw = "kvCachePresetRaw"
         static let flashAttentionEnabled = "flashAttentionEnabled"
         static let mmapEnabled = "mmapEnabled"
         static let mlockEnabled = "mlockEnabled"
