@@ -819,7 +819,7 @@ struct ModelPerformanceSection: View {
 }
 
 struct BenchmarkSection: View {
-    @StateObject private var modelStore = ModelStorage.shared
+    @ObservedObject private var modelStore = ModelStorage.shared
     @State private var isRunning = false
     @State private var status = "Idle"
     @State private var lastResult: String?
@@ -832,7 +832,9 @@ struct BenchmarkSection: View {
                     .font(.system(size: 16, weight: .medium))
                 Spacer()
                 Button(isRunning ? "Running…" : "Run") {
-                    Task { await runBenchmark() }
+                    Task { @MainActor in
+                        await runBenchmark()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isRunning)
