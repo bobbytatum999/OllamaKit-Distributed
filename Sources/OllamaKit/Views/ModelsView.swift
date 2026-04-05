@@ -1121,57 +1121,61 @@ struct SearchResultRow: View {
         Button {
             viewModel.selectedModel = model
         } label: {
-            HStack(spacing: 16) {
-                HuggingFaceAvatarView(model: model, size: 50, cornerRadius: 12)
-                
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 14) {
+                HuggingFaceAvatarView(model: model, size: 52, cornerRadius: 14)
+
+                VStack(alignment: .leading, spacing: 6) {
                     Text(model.displayName)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 16, weight: .semibold))
                         .lineLimit(1)
-                    
+
                     Text(model.organization)
-                        .font(.system(size: 13))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
-                    
-                    HStack(spacing: 12) {
+
+                    HStack(spacing: 8) {
                         if let downloads = model.downloads {
-                            Label(formatNumber(downloads), systemImage: "arrow.down.circle")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                            SearchRowChip(text: formatNumber(downloads), icon: "arrow.down.circle.fill")
                         }
-                        
+
                         if let likes = model.likes {
-                            Label(formatNumber(likes), systemImage: "heart")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                            SearchRowChip(text: formatNumber(likes), icon: "heart.fill")
                         }
+
+                        SearchRowChip(text: "GGUF", icon: "shippingbox.fill", tint: .blue)
                     }
 
                     if !model.repositoryAssessment.warningBadges.isEmpty {
                         HStack(spacing: 6) {
                             ForEach(model.repositoryAssessment.warningBadges, id: \.self) { badge in
-                                Text(badge)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3)
-                                    .background(
-                                        Capsule()
-                                            .fill(Color.orange.opacity(0.16))
-                                    )
-                                    .foregroundStyle(.orange)
+                                SearchRowChip(text: badge, icon: "exclamationmark.triangle.fill", tint: .orange)
                             }
                         }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(.thickMaterial))
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.10), radius: 10, x: 0, y: 5)
         }
         .buttonStyle(.plain)
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .disabled(viewModel.isDownloading)
     }
     
@@ -1189,6 +1193,7 @@ struct ModelDetailSheet: View {
     let model: HuggingFaceModel
     @ObservedObject var viewModel: ModelSearchViewModel
     @Environment(\.dismiss) private var dismiss
+    private var modelURL: URL? { URL(string: "https://huggingface.co/\(model.modelId)") }
     
     var body: some View {
         NavigationStack {
@@ -1200,7 +1205,7 @@ struct ModelDetailSheet: View {
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 12) {
-                                HuggingFaceAvatarView(model: model, size: 54, cornerRadius: 14)
+                                HuggingFaceAvatarView(model: model, size: 58, cornerRadius: 16)
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(model.displayName)
@@ -1218,6 +1223,7 @@ struct ModelDetailSheet: View {
                                 Text(description)
                                     .font(.system(size: 15))
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(4)
                             }
 
                             if !model.repositoryAssessment.warningBadges.isEmpty {
@@ -1252,6 +1258,20 @@ struct ModelDetailSheet: View {
                                 if let likes = model.likes {
                                     StatBadge(value: formatNumber(likes), label: "Likes", icon: "heart")
                                 }
+                            }
+
+                            if let modelURL {
+                                Link(destination: modelURL) {
+                                    Label("View on Hugging Face", systemImage: "safari")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(Color.accentColor.opacity(0.14))
+                                        )
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                         .padding(.vertical, 8)
@@ -1329,6 +1349,28 @@ struct ModelDetailSheet: View {
             return String(format: "%.1fk", Double(num) / 1_000)
         }
         return "\(num)"
+    }
+}
+
+private struct SearchRowChip: View {
+    let text: String
+    let icon: String
+    var tint: Color = .secondary
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(text)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(tint.opacity(0.12))
+        )
     }
 }
 
