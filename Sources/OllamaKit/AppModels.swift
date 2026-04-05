@@ -1044,6 +1044,7 @@ enum ModelPathHelper {
 
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
+    private static let recommendedGPULayers = 100
 
     @Published var defaultTemperature: Double { didSet { save(defaultTemperature, for: Keys.defaultTemperature) } }
     @Published var defaultTopP: Double { didSet { save(defaultTopP, for: Keys.defaultTopP) } }
@@ -1155,7 +1156,7 @@ final class AppSettings: ObservableObject {
 
         threads = defaults.object(forKey: Keys.threads) as? Int ?? max(ProcessInfo.processInfo.processorCount - 1, 1)
         batchSize = defaults.object(forKey: Keys.batchSize) as? Int ?? 512
-        gpuLayers = defaults.object(forKey: Keys.gpuLayers) as? Int ?? 0
+        gpuLayers = defaults.object(forKey: Keys.gpuLayers) as? Int ?? Self.recommendedGPULayers
         kvCachePresetRaw = defaults.string(forKey: Keys.kvCachePresetRaw) ?? RuntimePreferences.KVCachePreset.platformDefault.rawValue
         flashAttentionEnabled = defaults.object(forKey: Keys.flashAttentionEnabled) as? Bool ?? false
         mmapEnabled = defaults.object(forKey: Keys.mmapEnabled) as? Bool ?? true
@@ -1322,7 +1323,7 @@ final class AppSettings: ObservableObject {
 
         threads = max(ProcessInfo.processInfo.processorCount - 1, 1)
         batchSize = 512
-        gpuLayers = 0
+        gpuLayers = Self.recommendedGPULayers
         kvCachePresetRaw = RuntimePreferences.KVCachePreset.platformDefault.rawValue
         flashAttentionEnabled = false
         mmapEnabled = true

@@ -202,7 +202,7 @@ struct PerformanceSettingsSection: View {
                 title: "GPU Layers",
                 value: $settings.gpuLayers,
                 range: 0...100,
-                description: "Layers to offload to GPU"
+                description: "Layers to offload to GPU (100 = fastest on most devices)"
             )
             
             Divider()
