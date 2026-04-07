@@ -400,7 +400,7 @@ final class HuggingFaceService: @unchecked Sendable {
         }
     }
 
-    func cancelDownload(id: String) {
+    func cancelDownload(id: String) async {
         await MainActor.run {
             AppLogStore.shared.record(
                 .huggingFace,

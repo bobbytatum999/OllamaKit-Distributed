@@ -337,14 +337,25 @@ struct ChatView: View {
         }
         
         Task {
-            await viewModel.sendMessage(content, in: session, context: modelContext)
+            await viewModel.sendMessage(
+            content,
+            in: session,
+            context: modelContext,
+            parameters: ModelParameters(
+                temperature: Float(paramTemperature),
+                topP: Float(paramTopP),
+                topK: Int32(paramTopK),
+                repeatPenalty: Float(paramRepeatPenalty),
+                maxTokens: paramMaxTokens
+            )
+        )
         }
     }
 
     private func exportChat() {
         var markdown = "# Chat Export\n\n"
         markdown += "**Date:** \(DateFormatter.localizedString(from: session.createdAt, dateStyle: .long, timeStyle: .short))\n"
-        markdown += "**Model:** \(session.modelName)\n\n"
+        markdown += "**Model ID:** \(session.modelId)\n\n"
         for message in session.orderedMessages {
             let role = message.role == .user ? "**User**" : "**Assistant**"
             markdown += "\(role): \(message.content)\n\n"
@@ -643,7 +654,7 @@ class ChatViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var streamRevision = 0
     
-    func sendMessage(_ content: String, in session: ChatSession, context: ModelContext) async {
+    func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters = .appDefault) async {
         guard let model = currentModel else {
             AppLogStore.shared.record(
                 .chat,

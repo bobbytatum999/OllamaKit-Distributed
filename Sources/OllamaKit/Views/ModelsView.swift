@@ -27,6 +27,10 @@ struct ModelsView: View {
         return [.folder, .data]
     }
     
+    private var totalStorageUsed: Int64 {
+        installedModels.reduce(0) { $0 + $1.size }
+    }
+
     var body: some View {
         ZStack {
             AnimatedMeshBackground()
@@ -40,6 +44,21 @@ struct ModelsView: View {
                     }
 
                     BuiltInAppleModelCard()
+
+                    if !installedModels.isEmpty {
+                        SurfaceSectionCard(title: "Storage") {
+                            HStack {
+                                Image(systemName: "internaldrive")
+                                    .foregroundStyle(.secondary)
+                                Text("Total Used")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(formatBytes(totalStorageUsed))
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.system(size: 14))
+                        }
+                    }
 
                     SurfaceSectionCard(
                         title: "Installed Models",
@@ -1493,6 +1512,23 @@ struct GGUFFileRow: View {
 
                     ProgressView(value: Double(viewModel.downloadProgress) / 100.0)
 
+                    HStack {
+                        Text(viewModel.downloadBytes)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        if !viewModel.downloadSpeed.isEmpty {
+                            Text(viewModel.downloadSpeed)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        if !viewModel.downloadEta.isEmpty {
+                            Text(viewModel.downloadEta)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
                     Button {
                         viewModel.cancelCurrentDownload()
                     } label: {
@@ -1602,7 +1638,11 @@ class ModelSearchViewModel: ObservableObject {
     
     @Published var isDownloading = false
     @Published var downloadingFile: GGUFInfo?
+    @Published var downloadStartTime = Date()
     @Published var downloadProgress = 0
+    @Published var downloadSpeed: String = ""
+    @Published var downloadEta: String = ""
+    @Published var downloadBytes: String = ""
     @Published var downloadErrorTitle = "Download Failed"
     @Published var downloadError: String?
     @Published var pendingDownloadWarning: ModelDownloadWarning?
@@ -1697,6 +1737,10 @@ class ModelSearchViewModel: ObservableObject {
         isDownloading = true
         downloadingFile = file
         downloadProgress = 0
+        downloadSpeed = ""
+        downloadEta = ""
+        downloadBytes = ""
+        downloadStartTime = Date()
 
         defer {
             isDownloading = false
@@ -1711,6 +1755,18 @@ class ModelSearchViewModel: ObservableObject {
             ) { progress in
                 Task { @MainActor in
                     self.downloadProgress = progress.percentage
+                    self.downloadBytes = "\(progress.formattedDownloaded) / \(progress.formattedTotal)"
+                    if progress.speed > 0 {
+                        self.downloadSpeed = ByteCountFormatter.string(fromByteCount: Int64(progress.speed), countStyle: .file) + "/s"
+                        let remaining = Int64((1.0 - progress.progress) / progress.progress * (Double(Date().timeIntervalSince1970) - downloadStartTime.timeIntervalSince1970))
+                        if remaining > 0 && remaining < 86400 {
+                            let mins = Int(remaining) / 60
+                            let secs = Int(remaining) % 60
+                            self.downloadEta = "\(mins)m \(secs)s remaining"
+                        } else {
+                            self.downloadEta = ""
+                        }
+                    }
                 }
             }
 
@@ -1772,7 +1828,9 @@ class ModelSearchViewModel: ObservableObject {
 
     func cancelCurrentDownload() {
         guard let downloadingFile else { return }
-        HuggingFaceService.shared.cancelDownload(id: downloadingFile.id)
+        Task {
+            await HuggingFaceService.shared.cancelDownload(id: downloadingFile.id)
+        }
     }
 
     private func isCancellationError(_ error: Error) -> Bool {
@@ -2148,6 +2206,14 @@ struct DeviceCapabilityProfile {
 
         return .tooLarge
     }
+}
+
+
+private func formatBytes(_ bytes: Int64) -> String {
+    let formatter = ByteCountFormatter()
+    formatter.allowedUnits = [.useKB, .useMB, .useGB]
+    formatter.countStyle = .file
+    return formatter.string(fromByteCount: bytes)
 }
 
 #Preview {

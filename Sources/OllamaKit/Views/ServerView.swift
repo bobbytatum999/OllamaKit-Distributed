@@ -270,6 +270,52 @@ struct ConnectionInfoCard: View {
                 }
             }
 
+            if viewModel.serverState.isRunning, let serverURL = viewModel.networkURL ?? AppSettings.shared.localServerURL {
+                Divider()
+                
+                VStack(spacing: 12) {
+                    Text("QR Code")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    
+                    if let qrImage = generateQRCode(from: serverURL) {
+                        Image(uiImage: qrImage)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 140, height: 140)
+                            .padding(12)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    
+                    HStack(spacing: 12) {
+                        Button {
+                            UIPasteboard.general.string = serverURL
+                            showingCopiedAlert = true
+                        } label: {
+                            Label("Copy URL", systemImage: "doc.on.doc")
+                                .font(.system(size: 13))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        
+                        ShareLink(item: serverURL) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                                .font(.system(size: 13))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    
+                    Text(serverURL)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+
             Text("Background availability is best-effort on iOS. The app can restart the server after background task wakeups, but iOS may still suspend the process.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
