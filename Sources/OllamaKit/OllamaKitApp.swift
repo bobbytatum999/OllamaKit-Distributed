@@ -116,6 +116,7 @@ struct OllamaKitApp: App {
 
     @MainActor
     private static func makeModelContainer() -> ModelContainer {
+    }
 
 struct SharePendingBanner: View {
     let content: [String: Any]?

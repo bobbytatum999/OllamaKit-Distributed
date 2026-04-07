@@ -16,6 +16,7 @@ struct ChatView: View {
     @State private var showingModelSelector = false
     @State private var showingRenameDialog = false
     @State private var pendingTitle = ""
+    @StateObject private var voiceInput = VoiceInputController()
     @State private var showingParameters = false
     @State private var paramTemperature: Double = 0.7
     @State private var paramTopP: Double = 0.9
@@ -235,11 +236,11 @@ struct ChatView: View {
                             )
                         
                         Button(action: sendMessage) {
-                            Image(systemName: trimmedMessageText.isEmpty ? "waveform" : "arrow.up.circle.fill")
+                            Image(systemName: sendButtonSystemImage)
                                 .font(.system(size: 32))
-                                .foregroundStyle(trimmedMessageText.isEmpty ? Color.secondary : Color.accentColor)
+                                .foregroundStyle(sendButtonColor)
                         }
-                        .disabled(trimmedMessageText.isEmpty || viewModel.isGenerating)
+                        .disabled((trimmedMessageText.isEmpty && !canStartOrStopVoiceInput) || viewModel.isGenerating)
 
                         Button(action: toggleRecording) {
                             Image(systemName: isRecording ? "mic.slash.fill" : "mic.fill")
@@ -391,6 +392,14 @@ struct ChatView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+        .alert("Voice Input Error", isPresented: Binding(
+            get: { voiceInput.errorMessage != nil },
+            set: { if !$0 { voiceInput.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(voiceInput.errorMessage ?? "")
+        }
         .alert("Rename Chat", isPresented: $showingRenameDialog) {
             TextField("Chat Title", text: $pendingTitle)
             Button("Save") {
@@ -402,6 +411,9 @@ struct ChatView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .onDisappear {
+            voiceInput.stopRecording()
         }
     }
 
@@ -507,6 +519,12 @@ struct ChatView: View {
     }
     
     private func sendMessage() {
+        if trimmedMessageText.isEmpty {
+            toggleVoiceInput()
+            return
+        }
+
+        voiceInput.stopRecording()
         let content = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !selectedImages.isEmpty else { return }
 
@@ -520,7 +538,8 @@ struct ChatView: View {
             metadata: [
                 "session_id": session.id.uuidString,
                 "chars": "\(content.count)",
-                "images": "\(imageDataArray.count)"
+                "images": "\(imageDataArray.count)",
+                "has_system_prompt": String(!(session.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             ],
             body: content
         )
@@ -676,6 +695,178 @@ struct ChatView: View {
 
         if viewModel.currentModel != nil {
             viewModel.currentModel = nil
+        }
+    }
+
+    private var canStartOrStopVoiceInput: Bool {
+        voiceInput.isRecording || voiceInput.isAvailable
+    }
+
+    private var sendButtonSystemImage: String {
+        if !trimmedMessageText.isEmpty {
+            return "arrow.up.circle.fill"
+        }
+
+        return voiceInput.isRecording ? "stop.circle.fill" : "mic.circle.fill"
+    }
+
+    private var sendButtonColor: Color {
+        if !trimmedMessageText.isEmpty {
+            return .accentColor
+        }
+
+        return voiceInput.isRecording ? .red : .secondary
+    }
+
+    private func toggleVoiceInput() {
+        if voiceInput.isRecording {
+            voiceInput.stopRecording()
+            return
+        }
+
+        voiceInput.startRecording { transcript, isFinal in
+            messageText = transcript
+            if isFinal {
+                Task { @MainActor in
+                    HapticManager.impact(.light)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+final class VoiceInputController: NSObject, ObservableObject {
+    @Published var isRecording = false
+    @Published var isAvailable = true
+    @Published var errorMessage: String?
+
+    private let audioEngine = AVAudioEngine()
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+
+    func startRecording(onTranscript: @escaping @MainActor (String, Bool) -> Void) {
+        Task { @MainActor in
+            guard await requestPermissionsIfNeeded() else { return }
+            do {
+                try configureAndStartRecognition(onTranscript: onTranscript)
+            } catch {
+                stopRecording()
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func stopRecording() {
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        isRecording = false
+    }
+
+    private func requestPermissionsIfNeeded() async -> Bool {
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        let speechAuthorized: Bool
+        switch speechStatus {
+        case .authorized:
+            speechAuthorized = true
+        case .notDetermined:
+            speechAuthorized = await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status == .authorized)
+                }
+            }
+        default:
+            speechAuthorized = false
+        }
+
+        guard speechAuthorized else {
+            isAvailable = false
+            errorMessage = "Speech recognition permission is required for voice input."
+            return false
+        }
+
+        let micAuthorized = await requestMicrophonePermission()
+        guard micAuthorized else {
+            isAvailable = false
+            errorMessage = "Microphone permission is required for voice input."
+            return false
+        }
+
+        isAvailable = speechRecognizer?.isAvailable == true
+        guard isAvailable else {
+            errorMessage = "Voice input is currently unavailable for your selected language."
+            return false
+        }
+
+        return true
+    }
+
+    private func requestMicrophonePermission() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    private func configureAndStartRecognition(onTranscript: @escaping @MainActor (String, Bool) -> Void) throws {
+        stopRecording()
+
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.record, mode: .measurement, options: [.duckOthers])
+        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        recognitionRequest = request
+
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let self else { return }
+            self.recognitionRequest?.append(buffer)
+        }
+
+        audioEngine.prepare()
+        try audioEngine.start()
+
+        isRecording = true
+        errorMessage = nil
+
+        recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
+            guard let self else { return }
+
+            if let result {
+                Task { @MainActor in
+                    onTranscript(result.bestTranscription.formattedString, result.isFinal)
+                }
+
+                if result.isFinal {
+                    Task { @MainActor in
+                        self.stopRecording()
+                    }
+                    return
+                }
+            }
+
+            if let error {
+                Task { @MainActor in
+                    self.stopRecording()
+                    self.errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 }
@@ -973,6 +1164,12 @@ class ChatViewModel: ObservableObject {
                 message: "No runnable model is selected."
             )
             errorMessage = "No runnable model is selected. Pick another validated model or re-download the missing one."
+            AppLogStore.shared.record(
+                .error,
+                level: .warning,
+                title: "Chat Send Blocked",
+                message: "No runnable model selected."
+            )
             Task { @MainActor in
                 HapticManager.notification(.error)
             }
@@ -1020,9 +1217,25 @@ class ChatViewModel: ObservableObject {
         // parameters passed from ChatView
 
         do {
+            AppLogStore.shared.record(
+                .chat,
+                title: "Generation Started",
+                message: "Starting generation for selected model.",
+                metadata: [
+                    "model": model.displayName,
+                    "catalog_id": model.catalogId,
+                    "turn_count": String(conversationTurns.count + 1)
+                ]
+            )
+
+            let effectiveContextLength = max(
+                min(model.runtimeContextLength, AppSettings.shared.defaultContextLength),
+                512
+            )
+
             try await ModelRunner.shared.loadModel(
                 catalogId: model.catalogId,
-                contextLength: model.runtimeContextLength,
+                contextLength: effectiveContextLength,
                 gpuLayers: AppSettings.shared.gpuLayers
             )
 
@@ -1081,6 +1294,17 @@ class ChatViewModel: ObservableObject {
             
             session.updatedAt = Date()
             try? context.save()
+            AppLogStore.shared.record(
+                .chat,
+                title: "Generation Finished",
+                message: result.wasCancelled ? "Generation cancelled." : "Assistant response completed.",
+                metadata: [
+                    "model": model.displayName,
+                    "tokens": String(result.tokensGenerated),
+                    "seconds": String(format: "%.2f", result.generationTime),
+                    "cancelled": String(result.wasCancelled)
+                ]
+            )
             Task { @MainActor in
                 if result.wasCancelled {
                     HapticManager.impact(.medium)
@@ -1125,6 +1349,13 @@ class ChatViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             assistantMessage.content = "Error: \(error.localizedDescription)"
             assistantMessage.isGenerating = false
+            AppLogStore.shared.record(
+                .error,
+                level: .error,
+                title: "Generation Failed",
+                message: error.localizedDescription,
+                metadata: ["model": model.displayName]
+            )
             try? context.save()
             Task { @MainActor in
                 HapticManager.notification(.error)

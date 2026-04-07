@@ -532,6 +532,7 @@ final class ServerManager {
                 sendErrorResponse(status: 404, message: "Not Found", on: connection, context: context)
             }
         }
+    }
 
     private func handleLegacyListModels(on connection: NWConnection, context: ServerRequestContext) {
         Task {

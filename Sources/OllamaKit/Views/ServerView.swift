@@ -629,14 +629,6 @@ struct APIDocsSection: View {
     @State private var showingDocs = false
     
     let endpoints = [
-        ("GET", "/api/agent/context", "Agent runtime context bundle"),
-        ("GET", "/api/agent/tools", "Power-agent tool inventory"),
-        ("GET", "/api/agent/workspaces", "Registered agent workspaces"),
-        ("GET", "/api/agent/checkpoints", "Workspace checkpoint list"),
-        ("GET", "/api/agent/approvals", "Pending approval queue"),
-        ("POST", "/api/agent/execute", "Execute an agent tool"),
-        ("POST", "/api/agent/approvals/approve", "Approve a pending agent action"),
-        ("POST", "/api/agent/approvals/reject", "Reject a pending agent action"),
         ("GET", "/api/tags", "List validated server-runnable models"),
         ("POST", "/api/show", "Show model validation and capability detail"),
         ("POST", "/api/generate", "Generate text completion"),
@@ -1024,29 +1016,6 @@ struct APIDocumentationView: View {
                     // Endpoints
                     DocSection(title: "Endpoints") {
                         VStack(alignment: .leading, spacing: 16) {
-                            EndpointDoc(
-                                method: "GET",
-                                path: "/api/agent/context",
-                                description: "Return the power-agent runtime context bundle for app, device, workspace, models, logs, and tools",
-                                example: """
-                                curl http://localhost:11434/api/agent/context
-                                """
-                            )
-
-                            EndpointDoc(
-                                method: "POST",
-                                path: "/api/agent/execute",
-                                description: "Execute a power-agent tool. Write/destructive/network-side-effecting tools can return a pending approval instead of running immediately.",
-                                example: """
-                                curl -X POST http://localhost:11434/api/agent/execute \\
-                                  -H "Content-Type: application/json" \\
-                                  -d '{
-                                    "tool": "workspace.search",
-                                    "arguments": {"needle": "ServerManager"}
-                                  }'
-                                """
-                            )
-
                             EndpointDoc(
                                 method: "GET",
                                 path: "/api/tags",

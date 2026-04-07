@@ -39,7 +39,10 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             kvCachePreset: runtime.kvCachePreset,
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
-            mlockEnabled: runtime.mlockEnabled
+            mlockEnabled: runtime.mlockEnabled,
+            turboQuantMode: runtime.turboQuantMode,
+            kvCacheTypeK: runtime.kvCacheTypeK,
+            kvCacheTypeV: runtime.kvCacheTypeV
         )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -82,7 +85,10 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             kvCachePreset: runtime.kvCachePreset,
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
-            mlockEnabled: runtime.mlockEnabled
+            mlockEnabled: runtime.mlockEnabled,
+            turboQuantMode: runtime.turboQuantMode,
+            kvCacheTypeK: runtime.kvCacheTypeK,
+            kvCacheTypeV: runtime.kvCacheTypeV
         )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -262,6 +268,9 @@ private struct BackendConfiguration: Equatable {
     let flashAttentionEnabled: Bool
     let mmapEnabled: Bool
     let mlockEnabled: Bool
+    let turboQuantMode: RuntimePreferences.TurboQuantMode
+    let kvCacheTypeK: RuntimePreferences.KVCacheQuantization
+    let kvCacheTypeV: RuntimePreferences.KVCacheQuantization
 }
 
 private extension NSLock {
