@@ -690,6 +690,9 @@ final class ChatMessage {
     var generationTime: Double
     var isGenerating: Bool
     var session: ChatSession?
+    var imageData: Data?
+    var parentMessageId: UUID?
+    var branchPoint: Bool
 
     init(
         role: ChatRole,
@@ -706,6 +709,9 @@ final class ChatMessage {
         self.tokenCount = tokenCount
         self.generationTime = generationTime
         self.isGenerating = isGenerating
+        self.imageData = nil
+        self.parentMessageId = nil
+        self.branchPoint = false
     }
 
     var role: ChatRole {
@@ -1485,5 +1491,58 @@ final class AppSettings: ObservableObject {
         static let agentBrowserLastURL = "agentBrowserLastURL"
         static let agentBundleExpertMode = "agentBundleExpertMode"
         static let agentModelCapabilityOverrides = "agentModelCapabilityOverrides"
+    }
+}
+
+// MARK: - Automation Models
+
+@Model
+final class SavedAutomation {
+    var id: UUID
+    var name: String
+    var createdAt: Date
+    var triggerType: String // "manual" | "cron" | "webhook"
+    var cronSchedule: String? // e.g. "0 8 * * *"
+    var stepsJSON: String // serialized [AutomationStep]
+    var isEnabled: Bool
+    var lastRunAt: Date?
+    var lastRunResult: String?
+
+    init(
+        id: UUID = UUID(),
+        name: String = "",
+        createdAt: Date = Date(),
+        triggerType: String = "manual",
+        cronSchedule: String? = nil,
+        stepsJSON: String = "[]",
+        isEnabled: Bool = true,
+        lastRunAt: Date? = nil,
+        lastRunResult: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.triggerType = triggerType
+        self.cronSchedule = cronSchedule
+        self.stepsJSON = stepsJSON
+        self.isEnabled = isEnabled
+        self.lastRunAt = lastRunAt
+        self.lastRunResult = lastRunResult
+    }
+}
+
+struct AutomationStep: Codable, Identifiable {
+    var id: String
+    var service: String // "llm" | "http" | "notify"
+    var action: String
+    var params: [String: String]
+    var outputKey: String
+
+    init(id: String = UUID().uuidString, service: String, action: String, params: [String: String] = [:], outputKey: String = "") {
+        self.id = id
+        self.service = service
+        self.action = action
+        self.params = params
+        self.outputKey = outputKey
     }
 }

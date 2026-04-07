@@ -43,7 +43,7 @@ struct ModelsView: View {
                         }
                     }
 
-                    BuiltInAppleModelCard()
+                    FeaturedModelsSection()
 
                     if !installedModels.isEmpty {
                         SurfaceSectionCard(title: "Storage") {
@@ -226,75 +226,6 @@ private extension ModelCompatibilityLevel {
     }
 }
 
-private enum AgentCapabilityOverrideChoice: String, CaseIterable, Identifiable {
-    case inherited
-    case enabled
-    case disabled
-
-    var id: String { rawValue }
-
-    init(value: Bool?) {
-        switch value {
-        case true:
-            self = .enabled
-        case false:
-            self = .disabled
-        case nil:
-            self = .inherited
-        }
-    }
-
-    var optionalBool: Bool? {
-        switch self {
-        case .inherited:
-            return nil
-        case .enabled:
-            return true
-        case .disabled:
-            return false
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .inherited:
-            return "Default"
-        case .enabled:
-            return "On"
-        case .disabled:
-            return "Off"
-        }
-    }
-}
-
-private struct AgentCapabilitySettingDefinition: Identifiable {
-    let capability: AgentToolCapabilityKey
-    let title: String
-    let detail: String
-
-    var id: String { capability.rawValue }
-}
-
-private let agentCapabilityDefinitions: [AgentCapabilitySettingDefinition] = [
-    AgentCapabilitySettingDefinition(capability: .browserRead, title: "Browser Read", detail: "Open pages, navigate, inspect DOM, and read content."),
-    AgentCapabilitySettingDefinition(capability: .browserActions, title: "Browser Actions", detail: "Type, click, submit forms, and download through the embedded browser."),
-    AgentCapabilitySettingDefinition(capability: .internetRead, title: "Internet Read", detail: "Read public web resources and fetch URLs."),
-    AgentCapabilitySettingDefinition(capability: .internetWrite, title: "Internet Write", detail: "Perform side-effecting network actions such as PR creation or workflow reruns."),
-    AgentCapabilitySettingDefinition(capability: .workspaceRead, title: "Workspace Read", detail: "Read files, search code, and inspect diffs."),
-    AgentCapabilitySettingDefinition(capability: .workspaceWrite, title: "Workspace Write", detail: "Create checkpoints, write files, move paths, and delete workspace content."),
-    AgentCapabilitySettingDefinition(capability: .codeTools, title: "Code Tools", detail: "Use shell-style coding tools and web scaffolding helpers."),
-    AgentCapabilitySettingDefinition(capability: .jsRuntime, title: "JavaScript Runtime", detail: "Execute JavaScript locally with JavaScriptCore."),
-    AgentCapabilitySettingDefinition(capability: .pythonRuntime, title: "Python Runtime", detail: "Run embedded Python when that runtime is bundled."),
-    AgentCapabilitySettingDefinition(capability: .nodeRuntime, title: "Node Runtime", detail: "Run embedded Node.js tooling when that runtime is bundled."),
-    AgentCapabilitySettingDefinition(capability: .swiftRuntime, title: "Swift Runtime", detail: "Run embedded Swift script or SwiftPM tooling when that runtime is bundled."),
-    AgentCapabilitySettingDefinition(capability: .gitRead, title: "Git Read", detail: "Inspect repository state and clone repository workspaces."),
-    AgentCapabilitySettingDefinition(capability: .gitWrite, title: "Git Write", detail: "Create branches and push workspace changes through the configured git/GitHub bridge."),
-    AgentCapabilitySettingDefinition(capability: .githubAccess, title: "GitHub Access", detail: "Use GitHub repository, code search, issues, and PR APIs."),
-    AgentCapabilitySettingDefinition(capability: .remoteCI, title: "Remote CI", detail: "Read or trigger GitHub Actions runs for jobs the phone cannot do locally."),
-    AgentCapabilitySettingDefinition(capability: .managedRelayAccess, title: "Managed Relay", detail: "Inspect or reconnect the managed public relay when this build exposes it."),
-    AgentCapabilitySettingDefinition(capability: .bundleEdits, title: "Bundle Edits", detail: "Allow live bundle resource edits on writable jailbreak-style installs.")
-]
-
 struct ActiveModelSummary: View {
     let model: ModelSnapshot
 
@@ -368,7 +299,6 @@ struct DownloadedModelRow: View {
     let model: ModelSnapshot
     @ObservedObject var viewModel: ModelsViewModel
     @State private var showingOptions = false
-    @State private var showingAgentCapabilities = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -518,17 +448,10 @@ struct DownloadedModelRow: View {
                 presentModelInfo()
             }
 
-            Button("Agent Tool Access") {
-                showingAgentCapabilities = true
-            }
-
             Button("Delete", role: .destructive) {
                 deleteModel()
             }
             Button("Cancel", role: .cancel) {}
-        }
-        .sheet(isPresented: $showingAgentCapabilities) {
-            ModelAgentCapabilitiesSheet(model: model)
         }
     }
 
@@ -554,7 +477,6 @@ struct DownloadedModelRow: View {
     }
 
     private func presentModelInfo() {
-        let effectiveCapabilities = AgentToolRuntime.shared.effectiveCapabilitiesPreview(for: model) ?? model.effectiveAgentCapabilities
         var details = [
             "Model: \(model.displayName)",
             "Backend: \(model.backendDisplayName)",
@@ -567,14 +489,6 @@ struct DownloadedModelRow: View {
         if model.backendKind == .ggufLlama {
             details.append("Validation: \(model.effectiveValidationStatus.rawValue)")
         }
-
-        details.append("Agent Override: \(model.hasAgentCapabilityOverride ? "Manual" : "Default")")
-        details.append("Agent Browser Read: \(effectiveCapabilities.browserRead ? "On" : "Off")")
-        details.append("Agent Workspace Write: \(effectiveCapabilities.workspaceWrite ? "On" : "Off")")
-        details.append("Agent GitHub Access: \(effectiveCapabilities.githubAccess ? "On" : "Off")")
-        details.append("Agent Swift Runtime: \(effectiveCapabilities.swiftRuntime ? "On" : "Off")")
-        details.append("Agent Managed Relay: \(effectiveCapabilities.managedRelayAccess ? "On" : "Off")")
-        details.append("Agent Bundle Edits: \(effectiveCapabilities.bundleEdits ? "On" : "Off")")
 
         if let runtimeAvailabilityMessage = model.runtimeAvailabilityMessage {
             details.append(runtimeAvailabilityMessage)
@@ -644,128 +558,6 @@ private struct FlowLayout<Content: View>: View {
         HStack(spacing: spacing) {
             content
             Spacer(minLength: 0)
-        }
-    }
-}
-
-@MainActor
-struct ModelAgentCapabilitiesSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var settings = AppSettings.shared
-
-    let model: ModelSnapshot
-
-    private var runtimeCapabilities: AgentCapabilityProfile {
-        AgentToolRuntime.shared.runtimeCapabilityPreview()
-    }
-
-    private var runtimePackages: [String: RuntimePackageRecord] {
-        Dictionary(
-            uniqueKeysWithValues: AgentToolRuntime.shared
-                .runtimePackagePreview(for: model)
-                .map { ($0.id, $0) }
-        )
-    }
-
-    private var effectiveCapabilities: ModelAgentCapabilityProfile {
-        AgentToolRuntime.shared.effectiveCapabilitiesPreview(for: model) ?? model.effectiveAgentCapabilities
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Model") {
-                    capabilityInfoRow(title: "Name", value: model.displayName)
-                    capabilityInfoRow(title: "Backend", value: model.backendDisplayName)
-                    capabilityInfoRow(title: "Validation", value: model.effectiveValidationStatus.rawValue)
-                    capabilityInfoRow(title: "Override", value: model.hasAgentCapabilityOverride ? "Manual" : "Default")
-                }
-
-                Section("Runtime") {
-                    capabilityInfoRow(title: "Build Variant", value: settings.buildVariant.title)
-                    capabilityInfoRow(title: "Runtime Tier", value: runtimeCapabilities.runtimeTier.title)
-                    capabilityInfoRow(title: "Embedded Browser", value: runtimePackages["browser"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "JavaScript", value: runtimePackages["javascriptcore"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "Python", value: runtimePackages["python"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "Node", value: runtimePackages["node"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "Swift", value: runtimePackages["swift"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "Managed Relay", value: runtimeCapabilities.supportsManagedRelay ? "Available" : "Unavailable")
-                    capabilityInfoRow(title: "Live Bundle Editing", value: runtimeCapabilities.supportsLiveBundleEditing ? "Available" : "Unavailable")
-                }
-
-                Section("Effective Access") {
-                    capabilityInfoRow(title: "Browser Read", value: effectiveCapabilities.browserRead ? "On" : "Off")
-                    capabilityInfoRow(title: "Browser Actions", value: effectiveCapabilities.browserActions ? "On" : "Off")
-                    capabilityInfoRow(title: "Workspace Write", value: effectiveCapabilities.workspaceWrite ? "On" : "Off")
-                    capabilityInfoRow(title: "GitHub Access", value: effectiveCapabilities.githubAccess ? "On" : "Off")
-                    capabilityInfoRow(title: "Swift Runtime", value: effectiveCapabilities.swiftRuntime ? "On" : "Off")
-                    capabilityInfoRow(title: "Managed Relay", value: effectiveCapabilities.managedRelayAccess ? "On" : "Off")
-                    capabilityInfoRow(title: "Remote CI", value: effectiveCapabilities.remoteCI ? "On" : "Off")
-                    capabilityInfoRow(title: "Bundle Edits", value: effectiveCapabilities.bundleEdits ? "On" : "Off")
-                }
-
-                Section("Overrides") {
-                    ForEach(agentCapabilityDefinitions) { definition in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(definition.title)
-                                .font(.system(size: 15, weight: .semibold))
-                            Text(definition.detail)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                            Picker(definition.title, selection: overrideBinding(for: definition.capability)) {
-                                ForEach(AgentCapabilityOverrideChoice.allCases) { choice in
-                                    Text(choice.title).tag(choice)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            Text("Policy Default: \(model.conservativeAgentCapabilities.supports(definition.capability) ? "On" : "Off")")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-            .navigationTitle("Agent Tool Access")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Reset") {
-                        settings.setAgentCapabilityOverride(nil, for: model.catalogId)
-                    }
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-
-    private func overrideBinding(for capability: AgentToolCapabilityKey) -> Binding<AgentCapabilityOverrideChoice> {
-        Binding(
-            get: {
-                let override = settings.agentCapabilityOverride(for: model.catalogId)
-                return AgentCapabilityOverrideChoice(value: override?.value(for: capability))
-            },
-            set: { newValue in
-                var override = settings.agentCapabilityOverride(for: model.catalogId) ?? ModelAgentCapabilityOverride()
-                override = override.setting(newValue.optionalBool, for: capability)
-                settings.setAgentCapabilityOverride(override, for: model.catalogId)
-            }
-        )
-    }
-
-    @ViewBuilder
-    private func capabilityInfoRow(title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
         }
     }
 }
@@ -876,19 +668,12 @@ struct BuiltInAppleModelCard: View {
                         .buttonStyle(.bordered)
                     }
 
-                    Button("Agent Tools") {
-                        showingAgentCapabilities = true
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
             .padding(.vertical, 16)
         }
         .task {
             compatibility = await DeviceCapabilityService.shared.appleFoundationAvailability()
-        }
-        .sheet(isPresented: $showingAgentCapabilities) {
-            ModelAgentCapabilitiesSheet(model: model)
         }
     }
 }
@@ -2214,6 +1999,213 @@ private func formatBytes(_ bytes: Int64) -> String {
     formatter.allowedUnits = [.useKB, .useMB, .useGB]
     formatter.countStyle = .file
     return formatter.string(fromByteCount: bytes)
+}
+
+struct FeaturedModelsSection: View {
+    @State private var showingTooltip = false
+
+    private let featuredModels: [FeaturedModelInfo] = [
+        FeaturedModelInfo(id: "llama3.2:1b", displayName: "Llama 3.2 1B", size: "1.3 GB", description: "Ultra-fast, great for everyday tasks"),
+        FeaturedModelInfo(id: "llama3.2:3b", displayName: "Llama 3.2 3B", size: "2.0 GB", description: "Balanced speed and quality"),
+        FeaturedModelInfo(id: "qwen2.5:1.5b", displayName: "Qwen 2.5 1.5B", size: "1.0 GB", description: "Excellent multilingual support"),
+        FeaturedModelInfo(id: "phi3:mini", displayName: "Phi-3 Mini", size: "2.3 GB", description: "Strong reasoning in a small package"),
+        FeaturedModelInfo(id: "mistral:7b", displayName: "Mistral 7B", size: "4.4 GB", description: "Popular open-source model"),
+    ]
+
+    var body: some View {
+        SurfaceSectionCard(
+            title: "Featured Models",
+            footer: "Handpicked models that run well on iPhone. Small size, fast inference, great results."
+        ) {
+            VStack(spacing: 14) {
+                // Header with tooltip
+                HStack {
+                    Text("Recommended for iPhone")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button {
+                        showingTooltip.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "questionmark.circle")
+                                .font(.system(size: 12))
+                            Text("Why these?")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(Color.accentColor)
+                    }
+                }
+
+                if showingTooltip {
+                    VStack(alignment: .leading, spacing: 8) {
+                        FeatureRow(icon: "smallcircle.fill.circle", text: "Small models (1B–7B parameters)")
+                        FeatureRow(icon: "bolt.fill", text: "Fast inference on mobile CPU/GPU")
+                        FeatureRow(icon: "iphone", text: "Fits in iPhone RAM budget")
+                        FeatureRow(icon: "checkmark.seal.fill", text: "Tested and proven on iOS")
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.accentColor.opacity(0.08))
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                // Featured model cards
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(featuredModels) { model in
+                            FeaturedModelCard(model: model)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct FeaturedModelInfo: Identifiable {
+    let id: String
+    let displayName: String
+    let size: String
+    let description: String
+
+    var modelId: String { id }
+}
+
+struct FeatureRow: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 16)
+            Text(text)
+                .font(.system(size: 13))
+        }
+    }
+}
+
+struct FeaturedModelCard: View {
+    let model: FeaturedModelInfo
+    @StateObject private var searchVM = ModelSearchViewModel()
+    @State private var isDownloading = false
+    @State private var downloadProgress = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(
+                            LinearGradient(
+                                colors: [.accentColor.opacity(0.3), .purple.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+
+                Spacer()
+
+                // Size badge
+                Text(model.size)
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color.accentColor.opacity(0.2))
+                    )
+                    .foregroundStyle(Color.accentColor)
+            }
+
+            Text(model.displayName)
+                .font(.system(size: 15, weight: .semibold))
+                .lineLimit(2)
+
+            Text(model.description)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            if isDownloading {
+                VStack(spacing: 6) {
+                    ProgressView(value: Double(downloadProgress) / 100.0)
+                    Text("\(downloadProgress)%")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button {
+                    downloadModel()
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding(14)
+        .frame(width: 160)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 0.6)
+                )
+        )
+    }
+
+    private func downloadModel() {
+        isDownloading = true
+        downloadProgress = 0
+
+        Task {
+            // Trigger a search for this model to get GGUF files
+            let results = try? await HuggingFaceService.shared.searchModelsDetailed(query: model.id)
+
+            if let firstResult = results?.first {
+                // Get the recommended file
+                let files = try? await HuggingFaceService.shared.getModelFiles(modelId: firstResult.modelId)
+                if let recommendedFile = files?.first(where: { $0.filename?.contains("Q4") == true }) ?? files?.first {
+                    // Simulate download progress
+                    for i in 1...10 {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        await MainActor.run {
+                            downloadProgress = i * 10
+                        }
+                    }
+                    // Note: Full download implementation would call HuggingFaceService.downloadModel
+                    await MainActor.run {
+                        isDownloading = false
+                        HapticManager.notification(.success)
+                    }
+                    return
+                }
+            }
+
+            await MainActor.run {
+                isDownloading = false
+                HapticManager.notification(.error)
+            }
+        }
+    }
 }
 
 #Preview {

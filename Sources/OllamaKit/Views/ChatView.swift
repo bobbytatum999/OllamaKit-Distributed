@@ -1,6 +1,9 @@
 import SwiftUI
 import SwiftData
 import OllamaCore
+import PhotosUI
+import Speech
+import AVFoundation
 
 struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
@@ -19,6 +22,17 @@ struct ChatView: View {
     @State private var paramTopK: Int = 40
     @State private var paramRepeatPenalty: Double = 1.1
     @State private var paramMaxTokens: Int = 2048
+    @State private var selectedImages: [UIImage] = []
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var showingCompareMode = false
+    @State private var compareModel: ModelSnapshot?
+    @State private var compareInput = ""
+    @State private var compareResponse1 = ""
+    @State private var compareResponse2 = ""
+    @State private var isComparing = false
+    @State private var showingCompareSheet = false
+    @State private var isRecording = false
+    @State private var speechRecognizer: SFSpeechRecognizer? = SFSpeechRecognizer(locale: .current)
     
     @Namespace private var bottomID
 
@@ -46,13 +60,23 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 16) {
                             ForEach(session.orderedMessages, id: \.id) { message in
-                                MessageBubble(message: message)
+                                MessageBubble(message: message, onBranch: message.role == .assistant ? { msg in branchFromHere(msg) } : nil)
                                     .id(message.id)
                             }
                             
                             if viewModel.isGenerating {
-                                TypingIndicator()
-                                    .id("typing")
+                                HStack(spacing: 8) {
+                                    TypingIndicator()
+                                    if viewModel.tokensPerSecond > 0 {
+                                        Text(String(format: "%.1f tok/s", viewModel.tokensPerSecond))
+                                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Capsule().fill(.ultraThinMaterial))
+                                    }
+                                }
+                                .id("typing")
                             }
                             
                             Color.clear
@@ -82,6 +106,61 @@ struct ChatView: View {
                 // Input Area
                 VStack(spacing: 0) {
                     Divider()
+                    
+                    // Image thumbnails strip
+                    if !selectedImages.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
+                                    ZStack(alignment: .topTrailing) {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 60, height: 60)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        Button {
+                                            selectedImages.remove(at: index)
+                                            if index < selectedPhotoItems.count {
+                                                selectedPhotoItems.remove(at: index)
+                                            }
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 18))
+                                                .foregroundStyle(.white)
+                                                .background(Circle().fill(.black.opacity(0.5)))
+                                        }
+                                        .offset(x: 4, y: -4)
+                                    }
+                                }
+                                
+                                // Add more photos button
+                                PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 4, matching: .images) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(.ultraThinMaterial)
+                                            .frame(width: 60, height: 60)
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .onChange(of: selectedPhotoItems) { _, newItems in
+                                    Task {
+                                        var newImages: [UIImage] = []
+                                        for item in newItems {
+                                            if let data = try? await item.loadTransferable(type: Data.self),
+                                               let image = UIImage(data: data) {
+                                                newImages.append(image)
+                                            }
+                                        }
+                                        selectedImages = newImages
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                        }
+                        .padding(.vertical, 8)
+                    }
                     
                     HStack(spacing: 12) {
                         // Model selector button
@@ -115,7 +194,31 @@ struct ChatView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
 
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        // Photos picker button
+                        PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 4, matching: .images) {
+                            Image(systemName: selectedImages.isEmpty ? "photo" : "photo.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(selectedImages.isEmpty ? Color.secondary : Color.accentColor)
+                        }
+                        .onChange(of: selectedPhotoItems) { _, newItems in
+                            Task {
+                                var newImages: [UIImage] = []
+                                for item in newItems {
+                                    if let data = try? await item.loadTransferable(type: Data.self),
+                                       let image = UIImage(data: data) {
+                                        newImages.append(image)
+                                    }
+                                }
+                                // Append new images, avoid duplicates
+                                for img in newImages {
+                                    if !selectedImages.contains(where: { $0.pngData() == img.pngData() }) {
+                                        selectedImages.append(img)
+                                    }
+                                }
+                            }
+                        }
+                        
                         TextField("Message", text: $messageText, axis: .vertical)
                             .textFieldStyle(.plain)
                             .font(.system(size: 16))
@@ -137,6 +240,13 @@ struct ChatView: View {
                                 .foregroundStyle(trimmedMessageText.isEmpty ? Color.secondary : Color.accentColor)
                         }
                         .disabled(trimmedMessageText.isEmpty || viewModel.isGenerating)
+
+                        Button(action: toggleRecording) {
+                            Image(systemName: isRecording ? "mic.slash.fill" : "mic.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(isRecording ? Color.red : Color.secondary)
+                        }
+                        .disabled(viewModel.isGenerating)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -170,6 +280,12 @@ struct ChatView: View {
                         }
                         
                         Button {
+                            showingCompareSheet = true
+                        } label: {
+                            Label("Compare Models", systemImage: "rectangle.split.2x1")
+                        }
+                        
+                        Button {
                             clearMessages()
                         } label: {
                             Label("Clear Messages", systemImage: "trash")
@@ -190,6 +306,12 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showingModelSelector) {
             ModelSelectorSheet(selectedModel: $viewModel.currentModel)
+        }
+        .sheet(isPresented: $showingCompareSheet) {
+            NavigationStack {
+                ModelComparisonSheet(primaryModel: $viewModel.currentModel)
+            }
+            .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showingParameters) {
             NavigationStack {
@@ -304,6 +426,67 @@ struct ChatView: View {
         }
     }
 
+    private func branchFromHere(_ message: ChatMessage) {
+        // Mark the current message as a branch point
+        message.branchPoint = true
+        
+        // Create a new session for the branch
+        let branchSession = ChatSession(
+            modelId: session.modelId,
+            title: session.title + " (branch)",
+            systemPrompt: session.systemPrompt
+        )
+        branchSession.parentMessageId = message.id
+        modelContext.insert(branchSession)
+        
+        // Copy all messages up to and including the branch point message
+        for msg in session.orderedMessages {
+            if msg.id == message.id {
+                // Mark the branch point message in the new session
+                let msgCopy = ChatMessage(role: msg.role, content: msg.content)
+                msgCopy.createdAt = msg.createdAt
+                msgCopy.tokenCount = msg.tokenCount
+                msgCopy.generationTime = msg.generationTime
+                msgCopy.imageData = msg.imageData
+                msgCopy.branchPoint = true
+                msgCopy.parentMessageId = nil
+                msgCopy.session = branchSession
+                modelContext.insert(msgCopy)
+                break
+            } else {
+                let msgCopy = ChatMessage(role: msg.role, content: msg.content)
+                msgCopy.createdAt = msg.createdAt
+                msgCopy.tokenCount = msg.tokenCount
+                msgCopy.generationTime = msg.generationTime
+                msgCopy.imageData = msg.imageData
+                msgCopy.branchPoint = false
+                msgCopy.parentMessageId = nil
+                msgCopy.session = branchSession
+                modelContext.insert(msgCopy)
+            }
+        }
+        
+        try? modelContext.save()
+        
+        AppLogStore.shared.record(
+            .chat,
+            title: "Branch Created",
+            message: "Created a branch from message.",
+            metadata: [
+                "original_session": session.id.uuidString,
+                "branch_session": branchSession.id.uuidString,
+                "branch_point": message.id.uuidString
+            ]
+        )
+        
+        Task { @MainActor in
+            HapticManager.notification(.success)
+        }
+        
+        // Navigate to the branch session
+        session = branchSession
+    }
+
     private func deleteChat() {
         AppLogStore.shared.record(
             .chat,
@@ -325,7 +508,10 @@ struct ChatView: View {
     
     private func sendMessage() {
         let content = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty else { return }
+        guard !content.isEmpty || !selectedImages.isEmpty else { return }
+
+        // Encode selected images as base64 data
+        let imageDataArray = selectedImages.compactMap { $0.jpegData(compressionQuality: 0.8) }
 
         AppLogStore.shared.record(
             .chat,
@@ -333,11 +519,14 @@ struct ChatView: View {
             message: "Queued a new user message for generation.",
             metadata: [
                 "session_id": session.id.uuidString,
-                "chars": "\(content.count)"
+                "chars": "\(content.count)",
+                "images": "\(imageDataArray.count)"
             ],
             body: content
         )
         messageText = ""
+        selectedImages = []
+        selectedPhotoItems = []
 
         Task { @MainActor in
             HapticManager.impact(.light)
@@ -345,17 +534,103 @@ struct ChatView: View {
         
         Task {
             await viewModel.sendMessage(
-            content,
-            in: session,
-            context: modelContext,
-            parameters: ModelParameters(
-                temperature: paramTemperature,
-                topP: paramTopP,
-                topK: paramTopK,
-                repeatPenalty: paramRepeatPenalty,
-                maxTokens: paramMaxTokens
+                content,
+                in: session,
+                context: modelContext,
+                parameters: ModelParameters(
+                    temperature: paramTemperature,
+                    topP: paramTopP,
+                    topK: paramTopK,
+                    repeatPenalty: paramRepeatPenalty,
+                    maxTokens: paramMaxTokens
+                ),
+                imageData: imageDataArray.isEmpty ? nil : imageDataArray
             )
-        )
+        }
+    }
+
+    private func toggleRecording() {
+        if isRecording {
+            isRecording = false
+            Task { @MainActor in
+                HapticManager.impact(.medium)
+            }
+        } else {
+            requestSpeechPermission()
+        }
+    }
+
+    private func requestSpeechPermission() {
+        SFSpeechRecognizer.requestAuthorization { [self] status in
+            Task { @MainActor in
+                switch status {
+                case .authorized:
+                    startSpeechRecognition()
+                case .denied, .restricted:
+                    HapticManager.notification(.error)
+                case .notDetermined:
+                    HapticManager.notification(.warning)
+                @unknown default:
+                    break
+                }
+            }
+        }
+    }
+
+    private func startSpeechRecognition() {
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            Task { @MainActor in
+                HapticManager.notification(.error)
+            }
+            return
+        }
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+
+        let audioEngine = AVAudioEngine()
+        let inputNode = audioEngine.inputNode
+
+        isRecording = true
+        Task { @MainActor in
+            HapticManager.impact(.light)
+        }
+
+        Task {
+            var lastTranscription = ""
+            let stream = recognizer.recognitionTask(with: request) { [self] result, error in
+                if let result = result {
+                    let transcription = result.bestTranscription.formattedString
+                    Task { @MainActor in
+                        messageText = lastTranscription + transcription
+                    }
+                }
+                if error != nil || result?.isFinal == true {
+                    lastTranscription = messageText + " "
+                }
+            }
+
+            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+                request.append(buffer)
+            }
+
+            audioEngine.prepare()
+            try? audioEngine.start()
+
+            // Wait for isRecording to become false (user stopped)
+            while isRecording {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+
+            audioEngine.stop()
+            inputNode.removeTap(onBus: 0)
+            stream.cancel()
+            request.endAudio()
+
+            Task { @MainActor in
+                HapticManager.impact(.medium)
+            }
         }
     }
 
@@ -407,7 +682,13 @@ struct ChatView: View {
 
 struct MessageBubble: View {
     let message: ChatMessage
+    let onBranch: ((ChatMessage) -> Void)?
     @ObservedObject private var settings = AppSettings.shared
+    
+    init(message: ChatMessage, onBranch: ((ChatMessage) -> Void)? = nil) {
+        self.message = message
+        self.onBranch = onBranch
+    }
     
     var isUser: Bool {
         message.role == .user
@@ -493,6 +774,24 @@ struct MessageBubble: View {
             }
             
             if !isUser { Spacer(minLength: 60) }
+        }
+        .contextMenu {
+            if !isUser, let onBranch = onBranch {
+                Button {
+                    onBranch(message)
+                } label: {
+                    Label("Branch from Here", systemImage: "arrow.branch")
+                }
+            }
+            
+            Button {
+                UIPasteboard.general.string = message.content
+                Task { @MainActor in
+                    HapticManager.notification(.success)
+                }
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
         }
     }
 }
@@ -661,8 +960,10 @@ class ChatViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var lastSentMessage: String = ""
     @Published var streamRevision = 0
-    
-    func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters = .appDefault) async {
+    @Published var tokensPerSecond: Double = 0
+    @Published var generationStartTime: Date?
+
+    func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters = .appDefault, imageData: [Data]? = nil) async {
         lastSentMessage = content
         guard let model = currentModel else {
             AppLogStore.shared.record(
@@ -681,9 +982,10 @@ class ChatViewModel: ObservableObject {
         let conversationTurns = session.orderedMessages
             .filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .map { ConversationTurn(role: $0.roleValue, content: $0.content) }
-        
+
         let userMessage = ChatMessage(role: .user, content: content)
         userMessage.session = session
+        userMessage.imageData = imageData?.first
         context.insert(userMessage)
         session.updatedAt = Date()
 
@@ -696,6 +998,8 @@ class ChatViewModel: ObservableObject {
 
         isGenerating = true
         streamRevision = 0
+        tokensPerSecond = 0
+        generationStartTime = Date()
         AppLogStore.shared.record(
             .chat,
             title: "Generation Started",
@@ -703,15 +1007,18 @@ class ChatViewModel: ObservableObject {
             metadata: [
                 "session_id": session.id.uuidString,
                 "model_id": model.catalogId,
-                "streaming": "\(AppSettings.shared.streamingEnabled)"
+                "streaming": "\(AppSettings.shared.streamingEnabled)",
+                "has_images": "\(imageData?.isEmpty == false)"
             ]
         )
         defer {
             isGenerating = false
+            tokensPerSecond = 0
+            generationStartTime = nil
         }
 
         // parameters passed from ChatView
-        
+
         do {
             try await ModelRunner.shared.loadModel(
                 catalogId: model.catalogId,
@@ -720,18 +1027,35 @@ class ChatViewModel: ObservableObject {
             )
 
             var generatedText = ""
+            var tokensGenerated = 0
             let shouldStreamInUI = AppSettings.shared.streamingEnabled
+            let startTime = Date()
+
+            // Build conversation turns with image data
+            var userTurn = ConversationTurn(role: userMessage.roleValue, content: userMessage.content)
+            if let imageData = imageData, !imageData.isEmpty {
+                // For image support: create content parts with image URLs (base64 data URLs)
+                let imageParts = imageData.map { data -> ConversationContentPart in
+                    let base64 = data.base64EncodedString()
+                    return ConversationContentPart(kind: .imageURL, url: "data:image/jpeg;base64,\(base64)")
+                }
+                userTurn = ConversationTurn(role: userMessage.roleValue, parts: imageParts + [.text(userMessage.content)])
+            }
 
             let result = try await ModelRunner.shared.generate(
                 prompt: "",
                 systemPrompt: session.systemPrompt,
-                conversationTurns: conversationTurns + [ConversationTurn(role: userMessage.roleValue, content: userMessage.content)],
+                conversationTurns: conversationTurns + [userTurn],
                 parameters: parameters
             ) { token in
                 guard shouldStreamInUI else { return }
+                tokensGenerated += 1
                 generatedText += token
+                let elapsed = Date().timeIntervalSince(startTime)
+                let tps = elapsed > 0 ? Double(tokensGenerated) / elapsed : 0
                 Task { @MainActor in
                     assistantMessage.content = generatedText
+                    self.tokensPerSecond = tps
                     self.streamRevision += 1
                 }
             }
@@ -831,6 +1155,243 @@ class ChatViewModel: ObservableObject {
         }
 
         return false
+    }
+}
+
+struct ModelComparisonSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var primaryModel: ModelSnapshot?
+    @StateObject private var modelStore = ModelStorage.shared
+    @State private var selectedModel2: ModelSnapshot?
+    @State private var compareInput = ""
+    @State private var response1 = ""
+    @State private var response2 = ""
+    @State private var isRunning1 = false
+    @State private var isRunning2 = false
+    @State private var errorMessage: String?
+
+    private var availableModels: [ModelSnapshot] {
+        BuiltInModelCatalog.selectionModels(downloadedModels: modelStore.selectionSnapshots)
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            if availableModels.count < 2 {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.orange)
+                    Text("Need at least 2 models")
+                        .font(.headline)
+                    Text("Download at least 2 models to use comparison mode")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Model selectors
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Model 1")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Menu {
+                                    ForEach(availableModels.filter { $0.id != selectedModel2?.id }) { model in
+                                        Button(model.displayName) {
+                                            primaryModel = model
+                                        }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(primaryModel?.displayName ?? "Select")
+                                        Spacer()
+                                        Image(systemName: "chevron.down")
+                                    }
+                                    .padding(10)
+                                    .background(Capsule().fill(.ultraThinMaterial))
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Model 2")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Menu {
+                                    ForEach(availableModels.filter { $0.id != primaryModel?.id }) { model in
+                                        Button(model.displayName) {
+                                            selectedModel2 = model
+                                        }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(selectedModel2?.displayName ?? "Select")
+                                        Spacer()
+                                        Image(systemName: "chevron.down")
+                                    }
+                                    .padding(10)
+                                    .background(Capsule().fill(.ultraThinMaterial))
+                                }
+                            }
+                        }
+
+                        // Input
+                        TextField("Enter a prompt to compare...", text: $compareInput, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 16))
+                            .lineLimit(3...6)
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(.ultraThinMaterial)
+                            )
+
+                        Button {
+                            runComparison()
+                        } label: {
+                            Label(
+                                (isRunning1 || isRunning2) ? "Running..." : "Compare",
+                                systemImage: "rectangle.split.2x1"
+                            )
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill((primaryModel != nil && selectedModel2 != nil && !compareInput.isEmpty && !isRunning1 && !isRunning2) ? Color(hex: "8B5CF6") : Color.gray)
+                            )
+                        }
+                        .disabled(primaryModel == nil || selectedModel2 == nil || compareInput.isEmpty || isRunning1 || isRunning2)
+
+                        // Results
+                        if !response1.isEmpty || !response2.isEmpty || isRunning1 || isRunning2 {
+                            HStack(alignment: .top, spacing: 12) {
+                                // Model 1 response
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text(primaryModel?.displayName ?? "Model 1")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                        if isRunning1 {
+                                            ProgressView()
+                                                .scaleEffect(0.7)
+                                        }
+                                    }
+                                    ScrollView {
+                                        Text(response1.isEmpty ? "..." : response1)
+                                            .font(.system(size: 14))
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .frame(minHeight: 80)
+                                    .padding(10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Color.gray.opacity(0.08))
+                                    )
+                                }
+
+                                // Model 2 response
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text(selectedModel2?.displayName ?? "Model 2")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                        if isRunning2 {
+                                            ProgressView()
+                                                .scaleEffect(0.7)
+                                        }
+                                    }
+                                    ScrollView {
+                                        Text(response2.isEmpty ? "..." : response2)
+                                            .font(.system(size: 14))
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .frame(minHeight: 80)
+                                    .padding(10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Color.gray.opacity(0.08))
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+        .navigationTitle("Compare Models")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { dismiss() }
+            }
+        }
+    }
+
+    private func runComparison() {
+        guard let model1 = primaryModel, let model2 = selectedModel2 else { return }
+        let prompt = compareInput
+
+        // Run model 1
+        isRunning1 = true
+        response1 = ""
+        Task {
+            do {
+                try await ModelRunner.shared.loadModel(
+                    catalogId: model1.catalogId,
+                    contextLength: model1.runtimeContextLength,
+                    gpuLayers: AppSettings.shared.gpuLayers
+                )
+                let result = try await ModelRunner.shared.generate(
+                    prompt: "",
+                    systemPrompt: nil,
+                    conversationTurns: [ConversationTurn(role: "user", content: prompt)],
+                    parameters: .appDefault
+                ) { _ in }
+                await MainActor.run {
+                    response1 = result.text ?? ""
+                    isRunning1 = false
+                }
+            } catch {
+                await MainActor.run {
+                    response1 = "Error: \(error.localizedDescription)"
+                    isRunning1 = false
+                }
+            }
+        }
+
+        // Run model 2
+        isRunning2 = true
+        response2 = ""
+        Task {
+            do {
+                try await ModelRunner.shared.loadModel(
+                    catalogId: model2.catalogId,
+                    contextLength: model2.runtimeContextLength,
+                    gpuLayers: AppSettings.shared.gpuLayers
+                )
+                let result = try await ModelRunner.shared.generate(
+                    prompt: "",
+                    systemPrompt: nil,
+                    conversationTurns: [ConversationTurn(role: "user", content: prompt)],
+                    parameters: .appDefault
+                ) { _ in }
+                await MainActor.run {
+                    response2 = result.text ?? ""
+                    isRunning2 = false
+                }
+            } catch {
+                await MainActor.run {
+                    response2 = "Error: \(error.localizedDescription)"
+                    isRunning2 = false
+                }
+            }
+        }
     }
 }
 

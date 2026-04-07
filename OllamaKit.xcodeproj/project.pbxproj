@@ -37,18 +37,12 @@
 		000000010000000000000022 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000111 /* Accelerate.framework */; };
 		000000010000000000000023 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000112 /* Metal.framework */; };
 		000000010000000000000024 /* AnemllCore in Frameworks */ = {isa = PBXBuildFile; productRef = 000000010000000000000A01 /* AnemllCore */; };
-		000000010000000000000025 /* AgentServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011B /* AgentServices.swift */; };
-		000000010000000000000026 /* GeneratedAgentWorkspaceSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011C /* GeneratedAgentWorkspaceSeed.swift */; };
-		000000010000000000000027 /* AgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011D /* AgentView.swift */; };
 		000000010000000000000028 /* LocalFilesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011E /* LocalFilesModels.swift */; };
 		000000010000000000000029 /* LocalFilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011F /* LocalFilesSettingsView.swift */; };
 		00000001000000000000002A /* LocalFilesScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000120 /* LocalFilesScanner.swift */; };
 		00000001000000000000002B /* LocalFilesTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000121 /* LocalFilesTool.swift */; };
-		00000001000000000000002C /* Python.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000122 /* Python.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		00000001000000000000002D /* OllamaKitPythonRuntime.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000123 /* OllamaKitPythonRuntime.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		00000001000000000000002E /* NodeMobile.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000124 /* NodeMobile.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		00000001000000000000002F /* OllamaKitNodeRuntime.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000125 /* OllamaKitNodeRuntime.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		000000010000000000000030 /* OllamaKitSwiftRuntime.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000126 /* OllamaKitSwiftRuntime.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		00000001000000000000002C /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000122 /* ShareViewController.swift */; };
+		00000001000000000000002D /* ShareExtension.entitlements in Embed */ = {isa = PBXBuildFile; fileRef = 000000010000000000000123 /* ShareExtension.entitlements */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,11 +64,6 @@
 			files = (
 				000000010000000000000020 /* OllamaCore.framework in Embed Frameworks */,
 				000000010000000000000017 /* llama.xcframework in Embed Frameworks */,
-				00000001000000000000002C /* Python.xcframework in Embed Frameworks */,
-				00000001000000000000002D /* OllamaKitPythonRuntime.xcframework in Embed Frameworks */,
-				00000001000000000000002E /* NodeMobile.xcframework in Embed Frameworks */,
-				00000001000000000000002F /* OllamaKitNodeRuntime.xcframework in Embed Frameworks */,
-				000000010000000000000030 /* OllamaKitSwiftRuntime.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -98,7 +87,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -eo pipefail\nbash \"$SRCROOT/Scripts/ensure-embedded-runtimes.sh\" \"$SRCROOT/Vendor/Runtime\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -130,18 +118,13 @@
 		000000010000000000000118 /* DeviceCapabilityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCapabilityService.swift; sourceTree = "<group>"; };
 		000000010000000000000119 /* GGUFBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GGUFBackend.swift; sourceTree = "<group>"; };
 		00000001000000000000011A /* RuntimeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeCoordinator.swift; sourceTree = "<group>"; };
-		00000001000000000000011B /* AgentServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentServices.swift; sourceTree = "<group>"; };
-		00000001000000000000011C /* GeneratedAgentWorkspaceSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedAgentWorkspaceSeed.swift; sourceTree = "<group>"; };
-		00000001000000000000011D /* AgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentView.swift; sourceTree = "<group>"; };
 		00000001000000000000011E /* LocalFilesModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesModels.swift; sourceTree = "<group>"; };
 		00000001000000000000011F /* LocalFilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesSettingsView.swift; sourceTree = "<group>"; };
 		000000010000000000000120 /* LocalFilesScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesScanner.swift; sourceTree = "<group>"; };
 		000000010000000000000121 /* LocalFilesTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesTool.swift; sourceTree = "<group>"; };
-		000000010000000000000122 /* Python.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Vendor/Runtime/Python.xcframework; sourceTree = SOURCE_ROOT; };
-		000000010000000000000123 /* OllamaKitPythonRuntime.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Vendor/Runtime/OllamaKitPythonRuntime.xcframework; sourceTree = SOURCE_ROOT; };
-		000000010000000000000124 /* NodeMobile.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Vendor/Runtime/NodeMobile.xcframework; sourceTree = SOURCE_ROOT; };
-		000000010000000000000125 /* OllamaKitNodeRuntime.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Vendor/Runtime/OllamaKitNodeRuntime.xcframework; sourceTree = SOURCE_ROOT; };
-		000000010000000000000126 /* OllamaKitSwiftRuntime.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Vendor/Runtime/OllamaKitSwiftRuntime.xcframework; sourceTree = SOURCE_ROOT; };
+		000000010000000000000122 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		000000010000000000000123 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
+		000000010000000000000124 /* ShareExtension */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = ShareExtension; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -173,6 +156,7 @@
 				000000010000000000000301 /* OllamaKit */,
 				000000010000000000000520 /* OllamaCore */,
 				000000010000000000000510 /* Frameworks */,
+				000000010000000000000530 /* ShareExtension */,
 				000000010000000000000302 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -204,7 +188,6 @@
 		000000010000000000000400 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				00000001000000000000011D /* AgentView.swift */,
 				000000010000000000000102 /* ContentView.swift */,
 				000000010000000000000103 /* ChatView.swift */,
 				000000010000000000000104 /* ChatSessionsView.swift */,
@@ -220,8 +203,6 @@
 		000000010000000000000500 /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				00000001000000000000011B /* AgentServices.swift */,
-				00000001000000000000011C /* GeneratedAgentWorkspaceSeed.swift */,
 				000000010000000000000120 /* LocalFilesScanner.swift */,
 				000000010000000000000121 /* LocalFilesTool.swift */,
 				000000010000000000000108 /* ServerManager.swift */,
@@ -237,11 +218,6 @@
 			isa = PBXGroup;
 			children = (
 				000000010000000000000110 /* llama.xcframework */,
-				000000010000000000000122 /* Python.xcframework */,
-				000000010000000000000123 /* OllamaKitPythonRuntime.xcframework */,
-				000000010000000000000124 /* NodeMobile.xcframework */,
-				000000010000000000000125 /* OllamaKitNodeRuntime.xcframework */,
-				000000010000000000000126 /* OllamaKitSwiftRuntime.xcframework */,
 				000000010000000000000112 /* Metal.framework */,
 				000000010000000000000111 /* Accelerate.framework */,
 			);
@@ -258,6 +234,15 @@
 				00000001000000000000011A /* RuntimeCoordinator.swift */,
 			);
 			path = Sources/OllamaCore;
+			sourceTree = SOURCE_ROOT;
+		};
+		000000010000000000000530 /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				000000010000000000000122 /* ShareViewController.swift */,
+				000000010000000000000123 /* ShareExtension.entitlements */,
+			);
+			path = ShareExtension;
 			sourceTree = SOURCE_ROOT;
 		};
 /* End PBXGroup section */
@@ -301,6 +286,23 @@
 			productName = OllamaCore;
 			productReference = 000000010000000000000115 /* OllamaCore.framework */;
 			productType = "com.apple.product-type.framework";
+		};
+		000000010000000000000620 /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000010000000000000621 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				000000010000000000000622 /* Sources */,
+				000000010000000000000202 /* Frameworks */,
+				000000010000000000000213 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ShareExtension;
+			productName = ShareExtension;
+			productReference = 000000010000000000000124 /* ShareExtension */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -359,7 +361,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				000000010000000000000001 /* OllamaKitApp.swift in Sources */,
-				000000010000000000000027 /* AgentView.swift in Sources */,
 				000000010000000000000002 /* ContentView.swift in Sources */,
 				000000010000000000000003 /* ChatView.swift in Sources */,
 				000000010000000000000004 /* ChatSessionsView.swift in Sources */,
@@ -375,8 +376,6 @@
 				000000010000000000000028 /* LocalFilesModels.swift in Sources */,
 				000000010000000000000018 /* SurfaceSectionCard.swift in Sources */,
 				000000010000000000000019 /* UnifiedModelCatalog.swift in Sources */,
-				000000010000000000000025 /* AgentServices.swift in Sources */,
-				000000010000000000000026 /* GeneratedAgentWorkspaceSeed.swift in Sources */,
 				00000001000000000000002A /* LocalFilesScanner.swift in Sources */,
 				00000001000000000000002B /* LocalFilesTool.swift in Sources */,
 			);

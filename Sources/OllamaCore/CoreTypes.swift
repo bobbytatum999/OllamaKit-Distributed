@@ -1117,13 +1117,22 @@ public enum ConversationPrompting {
 
         let conversation = normalizedTurns(turns)
             .compactMap { turn -> String? in
+                // Check if this turn has image parts (for vision models)
+                let hasImages = turn.parts?.contains(where: { $0.kind == .imageURL }) ?? false
+                var turnContent = turn.content
+                // For vision models: prepend image placeholder token(s)
+                if hasImages {
+                    let imagePlaceholders = " <image>\n"
+                    turnContent = imagePlaceholders + turnContent
+                }
+
                 switch turn.role {
                 case "system":
-                    return "System:\n\(turn.content)"
+                    return "System:\n\(turnContent)"
                 case "assistant":
-                    return "Assistant:\n\(turn.content)"
+                    return "Assistant:\n\(turnContent)"
                 case "user":
-                    return "User:\n\(turn.content)"
+                    return "User:\n\(turnContent)"
                 default:
                     return nil
                 }

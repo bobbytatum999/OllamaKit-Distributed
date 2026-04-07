@@ -34,6 +34,15 @@ struct ContentView: View {
             }
             .tag(2)
 
+            // Automations Tab
+            NavigationStack {
+                AutomationsView()
+            }
+            .tabItem {
+                Label("Automate", systemImage: "wand.and.stars")
+            }
+            .tag(3)
+
             // Settings Tab
             NavigationStack {
                 SettingsView()
@@ -41,7 +50,7 @@ struct ContentView: View {
             .tabItem {
                 Label("Settings", systemImage: "gear")
             }
-            .tag(3)
+            .tag(4)
         }
         .tint(.accentColor)
         .preferredColorScheme(settings.darkMode ? .dark : .light)
