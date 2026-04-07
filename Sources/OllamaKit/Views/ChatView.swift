@@ -262,7 +262,7 @@ struct ChatView: View {
             message: "User submitted a chat message.",
             metadata: [
                 "chars": String(content.count),
-                "has_system_prompt": String(!(session.systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true))
+                "has_system_prompt": String(!(session.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             ]
         )
 
