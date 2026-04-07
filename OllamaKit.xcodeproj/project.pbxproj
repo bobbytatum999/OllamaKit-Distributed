@@ -43,6 +43,9 @@
 		00000001000000000000002B /* LocalFilesTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000121 /* LocalFilesTool.swift */; };
 		00000001000000000000002C /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000122 /* ShareViewController.swift */; };
 		00000001000000000000002D /* ShareExtension.entitlements in Embed */ = {isa = PBXBuildFile; fileRef = 000000010000000000000123 /* ShareExtension.entitlements */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		00000001000000000000002E /* AutomationRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000125 /* AutomationRunner.swift */; };
+		00000001000000000000002F /* AutomationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000126 /* AutomationsView.swift */; };
+		000000010000000000000030 /* CreateAutomationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000127 /* CreateAutomationView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,6 +69,20 @@
 				000000010000000000000017 /* llama.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		000000010000000000000213 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = "PlugIns";
+			files = (
+				00000001000000000000002D /* ShareExtension.entitlements in Embed */,
+			);
+			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -122,6 +139,9 @@
 		00000001000000000000011F /* LocalFilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesSettingsView.swift; sourceTree = "<group>"; };
 		000000010000000000000120 /* LocalFilesScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesScanner.swift; sourceTree = "<group>"; };
 		000000010000000000000121 /* LocalFilesTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesTool.swift; sourceTree = "<group>"; };
+		000000010000000000000125 /* AutomationRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationRunner.swift; sourceTree = "<group>"; };
+		000000010000000000000126 /* AutomationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationsView.swift; sourceTree = "<group>"; };
+		000000010000000000000127 /* CreateAutomationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateAutomationView.swift; sourceTree = "<group>"; };
 		000000010000000000000122 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		000000010000000000000123 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 		000000010000000000000124 /* ShareExtension */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = ShareExtension; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -144,6 +164,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				00000001000000000000001F /* OllamaCore.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000010000000000000202 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -196,6 +223,8 @@
 				000000010000000000000106 /* ServerView.swift */,
 				000000010000000000000107 /* SettingsView.swift */,
 				000000010000000000000113 /* SurfaceSectionCard.swift */,
+				000000010000000000000126 /* AutomationsView.swift */,
+				000000010000000000000127 /* CreateAutomationView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -210,6 +239,7 @@
 				00000001000000000000010A /* HuggingFaceService.swift */,
 				00000001000000000000010B /* BackgroundTaskManager.swift */,
 				000000010000000000000114 /* UnifiedModelCatalog.swift */,
+				000000010000000000000125 /* AutomationRunner.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -340,6 +370,7 @@
 			targets = (
 				000000010000000000000600 /* OllamaKit */,
 				000000010000000000000610 /* OllamaCore */,
+				000000010000000000000620 /* ShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -378,6 +409,9 @@
 				000000010000000000000019 /* UnifiedModelCatalog.swift in Sources */,
 				00000001000000000000002A /* LocalFilesScanner.swift in Sources */,
 				00000001000000000000002B /* LocalFilesTool.swift in Sources */,
+				00000001000000000000002E /* AutomationRunner.swift in Sources */,
+				00000001000000000000002F /* AutomationsView.swift in Sources */,
+				000000010000000000000030 /* CreateAutomationView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -390,6 +424,17 @@
 				00000001000000000000001C /* DeviceCapabilityService.swift in Sources */,
 				00000001000000000000001D /* GGUFBackend.swift in Sources */,
 				00000001000000000000001E /* RuntimeCoordinator.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		000000010000000000000622 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00000001000000000000002C /* ShareViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -582,6 +627,53 @@
 		};
 /* End XCBuildConfiguration section */
 
+/* Begin XCBuildConfiguration section */
+		000000010000000000000806 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/PlugIns",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.ollamakit.app.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		000000010000000000000807 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/PlugIns",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.ollamakit.app.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
 /* Begin XCConfigurationList section */
 		000000010000000000000601 /* Build configuration list for PBXNativeTarget "OllamaKit" */ = {
 			isa = XCConfigurationList;
@@ -597,6 +689,15 @@
 			buildConfigurations = (
 				000000010000000000000804 /* Debug */,
 				000000010000000000000805 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000010000000000000621 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000010000000000000806 /* Debug */,
+				000000010000000000000807 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

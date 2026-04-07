@@ -237,6 +237,16 @@ struct OnboardingView: View {
     @State private var currentPage = 0
     @State private var selectedOnboardingModel: String?
     @StateObject private var modelStore = ModelStorage.shared
+
+    private let recommendedModels: [(id: String, displayName: String, description: String, size: String)] = [
+        ("llama3.2:1b", "Llama 3.2 1B", "Fast & lightweight, great for everyday use", "1.3 GB"),
+        ("llama3.2:3b", "Llama 3.2 3B", "Balanced performance and quality", "2.0 GB"),
+        ("qwen2.5:1.5b", "Qwen 2.5 1.5B", "Excellent multilingual support", "1.0 GB"),
+        ("phi3.5:3b", "Phi-3.5 Mini 3B", "Strong reasoning in a small package", "2.3 GB"),
+        ("mistral:7b", "Mistral 7B", "Popular open-source model", "4.4 GB")
+    ]
+    @State private var selectedOnboardingModel: String?
+    @StateObject private var modelStore = ModelStorage.shared
     
     private let recommendedModels: [(id: String, displayName: String, description: String, size: String)] = [
         ("llama3.2:1b", "Llama 3.2 1B", "Fast & lightweight, great for everyday use", "1.3 GB"),
