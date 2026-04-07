@@ -331,7 +331,7 @@ final class ModelStorage: ObservableObject {
     func refresh() async {
         await MainActor.run {
             AppLogStore.shared.record(
-                category: .modelsCatalog,
+                .modelsCatalog,
                 level: .info,
                 title: "Catalog Refresh Started",
                 message: "Refreshing model catalog"
@@ -346,7 +346,7 @@ final class ModelStorage: ObservableObject {
 
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .info,
                     title: "Catalog Refresh Completed",
                     message: "Found \(installedModels.count) models",
@@ -356,7 +356,7 @@ final class ModelStorage: ObservableObject {
         } catch {
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .error,
                     title: "Failed to refresh model registry",
                     message: "Error: \(error.localizedDescription)",
@@ -383,7 +383,7 @@ final class ModelStorage: ObservableObject {
 
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .info,
                     title: "Model Added to Catalog",
                     message: "Added: \(seed.name)",
@@ -398,7 +398,7 @@ final class ModelStorage: ObservableObject {
         } catch {
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .error,
                     title: "Failed to upsert downloaded model into registry",
                     message: "Error: \(error.localizedDescription)",
@@ -447,7 +447,7 @@ final class ModelStorage: ObservableObject {
 
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .warning,
                     title: "Model Removed from Catalog",
                     message: "Removed model: \(catalogId)",
@@ -458,7 +458,7 @@ final class ModelStorage: ObservableObject {
         } catch {
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .error,
                     title: "Failed to delete model from registry",
                     message: "Error: \(error.localizedDescription)",
@@ -473,7 +473,7 @@ final class ModelStorage: ObservableObject {
     func validateModel(catalogId: String) async -> ModelSnapshot? {
         await MainActor.run {
             AppLogStore.shared.record(
-                category: .modelsCatalog,
+                .modelsCatalog,
                 level: .debug,
                 title: "Model Validation Started",
                 message: "Validating model: \(catalogId)",
@@ -507,7 +507,7 @@ final class ModelStorage: ObservableObject {
 
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .info,
                     title: "Model Validation Completed",
                     message: "Validation completed for: \(catalogId)",
@@ -518,7 +518,7 @@ final class ModelStorage: ObservableObject {
         } catch {
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .error,
                     title: "Failed to validate model",
                     message: "Error: \(error.localizedDescription)",
@@ -546,7 +546,7 @@ final class ModelStorage: ObservableObject {
         } catch {
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .error,
                     title: "Failed to delete installed models",
                     message: "Error: \(error.localizedDescription)",
@@ -588,7 +588,7 @@ final class ModelStorage: ObservableObject {
         } catch {
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .modelsCatalog,
+                    .modelsCatalog,
                     level: .error,
                     title: "Failed to migrate legacy model records",
                     message: "Error: \(error.localizedDescription)",

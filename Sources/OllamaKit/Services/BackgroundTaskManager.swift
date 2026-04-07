@@ -22,7 +22,7 @@ class BackgroundTaskManager {
         if !registered {
             Task { @MainActor in
                 AppLogStore.shared.record(
-                    category: .app,
+                    .app,
                     level: .error,
                     title: "Failed to register background task identifier",
                     message: "Could not register: \(backgroundTaskIdentifier)",
@@ -32,7 +32,7 @@ class BackgroundTaskManager {
         } else {
             Task { @MainActor in
                 AppLogStore.shared.record(
-                    category: .app,
+                    .app,
                     level: .info,
                     title: "Background Task Registered",
                     message: "Registered background task: \(backgroundTaskIdentifier)",
@@ -55,7 +55,7 @@ class BackgroundTaskManager {
         } catch {
             Task { @MainActor in
                 AppLogStore.shared.record(
-                    category: .app,
+                    .app,
                     level: .error,
                     title: "Failed to schedule background task",
                     message: "Error: \(error.localizedDescription)",

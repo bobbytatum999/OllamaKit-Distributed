@@ -27,7 +27,7 @@ final class HuggingFaceService: @unchecked Sendable {
     func searchModels(query: String, limit: Int = 20) async throws -> [HuggingFaceModel] {
         await MainActor.run {
             AppLogStore.shared.record(
-                category: .huggingFace,
+                .huggingFace,
                 level: .debug,
                 title: "HF Search Started",
                 message: "Searching for: \(query)",
@@ -58,7 +58,7 @@ final class HuggingFaceService: @unchecked Sendable {
 
         await MainActor.run {
             AppLogStore.shared.record(
-                category: .huggingFace,
+                .huggingFace,
                 level: .info,
                 title: "HF Search Completed",
                 message: "Found \(results.count) models for: \(query)",
@@ -72,7 +72,7 @@ final class HuggingFaceService: @unchecked Sendable {
     func getTrendingModels(limit: Int = 20) async throws -> [HuggingFaceModel] {
         await MainActor.run {
             AppLogStore.shared.record(
-                category: .huggingFace,
+                .huggingFace,
                 level: .debug,
                 title: "HF Trending Started",
                 message: "Fetching trending models",
@@ -102,7 +102,7 @@ final class HuggingFaceService: @unchecked Sendable {
 
         await MainActor.run {
             AppLogStore.shared.record(
-                category: .huggingFace,
+                .huggingFace,
                 level: .info,
                 title: "HF Trending Completed",
                 message: "Found \(results.count) trending models",
@@ -120,7 +120,7 @@ final class HuggingFaceService: @unchecked Sendable {
         await MainActor.run {
             let modelNames = detailedResults.prefix(5).map { $0.displayName }.joined(separator: ", ")
             AppLogStore.shared.record(
-                category: .huggingFace,
+                .huggingFace,
                 level: .info,
                 title: "HF Detailed Search Completed",
                 message: "Found \(detailedResults.count) detailed models for: \(query)",
@@ -168,7 +168,7 @@ final class HuggingFaceService: @unchecked Sendable {
     func getModelDetails(modelId: String) async throws -> HuggingFaceModel {
         await MainActor.run {
             AppLogStore.shared.record(
-                category: .huggingFace,
+                .huggingFace,
                 level: .debug,
                 title: "HF Model Details Requested",
                 message: "Fetching details for: \(modelId)",
@@ -310,7 +310,7 @@ final class HuggingFaceService: @unchecked Sendable {
     ) async throws -> DownloadedModel {
         await MainActor.run {
             AppLogStore.shared.record(
-                category: .huggingFace,
+                .huggingFace,
                 level: .info,
                 title: "HF Model Download Started",
                 message: "Downloading: \(modelId)",
@@ -339,7 +339,7 @@ final class HuggingFaceService: @unchecked Sendable {
                 progressHandler: { progress in
                     Task { @MainActor in
                         AppLogStore.shared.record(
-                            category: .huggingFace,
+                            .huggingFace,
                             level: .debug,
                             title: "HF Download Progress",
                             message: "Downloading: \(modelId)",
@@ -366,7 +366,7 @@ final class HuggingFaceService: @unchecked Sendable {
 
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .huggingFace,
+                    .huggingFace,
                     level: .info,
                     title: "HF Model Download Completed",
                     message: "Downloaded: \(modelId)",
@@ -389,7 +389,7 @@ final class HuggingFaceService: @unchecked Sendable {
             try? FileManager.default.removeItem(at: stagedURL)
             await MainActor.run {
                 AppLogStore.shared.record(
-                    category: .huggingFace,
+                    .huggingFace,
                     level: .error,
                     title: "HF Download Failed",
                     message: "Failed to download \(modelId): \(error.localizedDescription)",
@@ -403,7 +403,7 @@ final class HuggingFaceService: @unchecked Sendable {
     func cancelDownload(id: String) {
         await MainActor.run {
             AppLogStore.shared.record(
-                category: .huggingFace,
+                .huggingFace,
                 level: .warning,
                 title: "HF Download Cancelled",
                 message: "Download cancelled: \(id)",
@@ -452,7 +452,7 @@ final class HuggingFaceService: @unchecked Sendable {
             let statusCode = httpResponse.statusCode
             Task { @MainActor in
                 AppLogStore.shared.record(
-                    category: .huggingFace,
+                    .huggingFace,
                     level: .error,
                     title: "HF HTTP Error",
                     message: "HTTP request failed with status: \(statusCode)",
@@ -491,7 +491,7 @@ final class HuggingFaceService: @unchecked Sendable {
                 if let error {
                     Task { @MainActor in
                         AppLogStore.shared.record(
-                            category: .huggingFace,
+                            .huggingFace,
                             level: .error,
                             title: "HF Download Failed",
                             message: "Download session failed: \(error.localizedDescription)",
@@ -505,7 +505,7 @@ final class HuggingFaceService: @unchecked Sendable {
                 guard let temporaryURL, let response else {
                     Task { @MainActor in
                         AppLogStore.shared.record(
-                            category: .huggingFace,
+                            .huggingFace,
                             level: .debug,
                             title: "HF Download Session Ended",
                             message: "Download session ended for: \(id)",
@@ -518,7 +518,7 @@ final class HuggingFaceService: @unchecked Sendable {
 
                 Task { @MainActor in
                     AppLogStore.shared.record(
-                        category: .huggingFace,
+                        .huggingFace,
                         level: .debug,
                         title: "HF Download Session Ended",
                         message: "Download session completed for: \(id)",

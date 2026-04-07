@@ -13,6 +13,12 @@ struct ChatView: View {
     @State private var showingModelSelector = false
     @State private var showingRenameDialog = false
     @State private var pendingTitle = ""
+    @State private var showingParameters = false
+    @State private var paramTemperature: Double = 0.7
+    @State private var paramTopP: Double = 0.9
+    @State private var paramTopK: Int = 40
+    @State private var paramRepeatPenalty: Double = 1.1
+    @State private var paramMaxTokens: Int = 2048
     
     @Namespace private var bottomID
 
@@ -142,34 +148,93 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
+                HStack(spacing: 16) {
                     Button {
-                        pendingTitle = session.title
-                        showingRenameDialog = true
+                        showingParameters = true
                     } label: {
-                        Label("Rename", systemImage: "pencil")
+                        Image(systemName: "slider.horizontal.3")
                     }
                     
-                    Button {
-                        clearMessages()
+                    Menu {
+                        Button {
+                            pendingTitle = session.title
+                            showingRenameDialog = true
+                        } label: {
+                            Label("Rename", systemImage: "pencil")
+                        }
+                        
+                        Button {
+                            exportChat()
+                        } label: {
+                            Label("Export as Markdown", systemImage: "square.and.arrow.up")
+                        }
+                        
+                        Button {
+                            clearMessages()
+                        } label: {
+                            Label("Clear Messages", systemImage: "trash")
+                        }
+                        .disabled(viewModel.isGenerating)
+                        
+                        Button(role: .destructive) {
+                            deleteChat()
+                        } label: {
+                            Label("Delete Chat", systemImage: "trash")
+                        }
+                        .disabled(viewModel.isGenerating)
                     } label: {
-                        Label("Clear Messages", systemImage: "trash")
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .disabled(viewModel.isGenerating)
-                    
-                    Button(role: .destructive) {
-                        deleteChat()
-                    } label: {
-                        Label("Delete Chat", systemImage: "trash")
-                    }
-                    .disabled(viewModel.isGenerating)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
                 }
             }
         }
         .sheet(isPresented: $showingModelSelector) {
             ModelSelectorSheet(selectedModel: $viewModel.currentModel)
+        }
+        .sheet(isPresented: $showingParameters) {
+            NavigationStack {
+                Form {
+                    Section("Generation Parameters") {
+                        VStack(alignment: .leading) {
+                            Text("Temperature: \(paramTemperature, specifier: "%.2f")")
+                            Slider(value: $paramTemperature, in: 0...2)
+                        }
+                        VStack(alignment: .leading) {
+                            Text("Top P: \(paramTopP, specifier: "%.2f")")
+                            Slider(value: $paramTopP, in: 0...1)
+                        }
+                        VStack(alignment: .leading) {
+                            Text("Top K: \(paramTopK)")
+                            Stepper("\(paramTopK)", value: $paramTopK, in: 1...100)
+                        }
+                        VStack(alignment: .leading) {
+                            Text("Repeat Penalty: \(paramRepeatPenalty, specifier: "%.2f")")
+                            Slider(value: $paramRepeatPenalty, in: 0...2)
+                        }
+                        VStack(alignment: .leading) {
+                            Text("Max Tokens: \(paramMaxTokens)")
+                            Stepper("\(paramMaxTokens)", value: $paramMaxTokens, in: 64...8192, step: 64)
+                        }
+                    }
+                }
+                .navigationTitle("Parameters")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { showingParameters = false }
+                    }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Reset") {
+                            paramTemperature = 0.7
+                            paramTopP = 0.9
+                            paramTopK = 40
+                            paramRepeatPenalty = 1.1
+                            paramMaxTokens = 2048
+                        }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
         }
         .task {
             await modelStore.refresh()
@@ -273,6 +338,20 @@ struct ChatView: View {
         
         Task {
             await viewModel.sendMessage(content, in: session, context: modelContext)
+        }
+    }
+
+    private func exportChat() {
+        var markdown = "# Chat Export\n\n"
+        markdown += "**Date:** \(DateFormatter.localizedString(from: session.createdAt, dateStyle: .long, timeStyle: .short))\n"
+        markdown += "**Model:** \(session.modelName)\n\n"
+        for message in session.orderedMessages {
+            let role = message.role == .user ? "**User**" : "**Assistant**"
+            markdown += "\(role): \(message.content)\n\n"
+        }
+        UIPasteboard.general.string = markdown
+        Task { @MainActor in
+            HapticManager.notification(.success)
         }
     }
 
@@ -611,7 +690,13 @@ class ChatViewModel: ObservableObject {
             isGenerating = false
         }
 
-        let parameters = ModelParameters.appDefault
+        let parameters = ModelParameters(
+            temperature: Float(paramTemperature),
+            topP: Float(paramTopP),
+            topK: Int32(paramTopK),
+            repeatPenalty: Float(paramRepeatPenalty),
+            maxTokens: paramMaxTokens
+        )
         
         do {
             try await ModelRunner.shared.loadModel(
