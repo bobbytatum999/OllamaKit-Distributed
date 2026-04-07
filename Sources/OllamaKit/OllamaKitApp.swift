@@ -52,7 +52,10 @@ struct OllamaKitApp: App {
             .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
                 thermalState = ProcessInfo.processInfo.thermalState
             }
-            .fullScreenCover(isPresented: $hasCompletedOnboarding) {
+            .fullScreenCover(isPresented: Binding(
+                get: { !hasCompletedOnboarding },
+                set: { hasCompletedOnboarding = !$0 }
+            )) {
                 OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
             }
         }
