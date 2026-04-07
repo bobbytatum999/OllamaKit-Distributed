@@ -317,7 +317,7 @@ private final class BackendEngine {
         contextParams.n_threads_batch = Int32(configuration.threads)
         contextParams.flash_attn_type = configuration.flashAttentionEnabled ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED
         contextParams.no_perf = false
-        applyKVCachePreset(configuration.kvCachePreset, to: &contextParams)
+        Self.applyKVCachePreset(configuration.kvCachePreset, to: &contextParams)
 
         #if targetEnvironment(simulator)
         contextParams.offload_kqv = false
@@ -356,7 +356,7 @@ private final class BackendEngine {
         self.configuration == configuration
     }
 
-    private func applyKVCachePreset(_ preset: RuntimePreferences.KVCachePreset, to params: inout llama_context_params) {
+    private static func applyKVCachePreset(_ preset: RuntimePreferences.KVCachePreset, to params: inout llama_context_params) {
         switch preset {
         case .platformDefault:
             break
