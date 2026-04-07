@@ -87,7 +87,7 @@ final class ModelRunner: ObservableObject {
                 message: "Model loaded successfully.",
                 metadata: [
                     "catalog_id": catalogId,
-                    "resolved_path": entry.localPath
+                    "resolved_path": entry.localPath ?? ""
                 ]
             )
         }
