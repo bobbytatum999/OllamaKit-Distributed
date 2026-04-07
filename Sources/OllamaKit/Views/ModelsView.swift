@@ -1758,7 +1758,7 @@ class ModelSearchViewModel: ObservableObject {
                     self.downloadBytes = "\(progress.formattedDownloaded) / \(progress.formattedTotal)"
                     if progress.speed > 0 {
                         self.downloadSpeed = ByteCountFormatter.string(fromByteCount: Int64(progress.speed), countStyle: .file) + "/s"
-                        let remaining = Int64((1.0 - progress.progress) / progress.progress * (Double(Date().timeIntervalSince1970) - downloadStartTime.timeIntervalSince1970))
+                        let remaining = Int64((1.0 - progress.progress) / progress.progress * (Double(Date().timeIntervalSince1970) - self.downloadStartTime.timeIntervalSince1970))
                         if remaining > 0 && remaining < 86400 {
                             let mins = Int(remaining) / 60
                             let secs = Int(remaining) % 60

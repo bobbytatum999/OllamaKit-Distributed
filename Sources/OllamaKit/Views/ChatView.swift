@@ -349,10 +349,10 @@ struct ChatView: View {
             in: session,
             context: modelContext,
             parameters: ModelParameters(
-                temperature: Float(paramTemperature),
-                topP: Float(paramTopP),
-                topK: Int32(paramTopK),
-                repeatPenalty: Float(paramRepeatPenalty),
+                temperature: paramTemperature,
+                topP: paramTopP,
+                topK: paramTopK,
+                repeatPenalty: paramRepeatPenalty,
                 maxTokens: paramMaxTokens
             )
         )
@@ -710,13 +710,7 @@ class ChatViewModel: ObservableObject {
             isGenerating = false
         }
 
-        let parameters = ModelParameters(
-            temperature: Float(paramTemperature),
-            topP: Float(paramTopP),
-            topK: Int32(paramTopK),
-            repeatPenalty: Float(paramRepeatPenalty),
-            maxTokens: paramMaxTokens
-        )
+        // parameters passed from ChatView
         
         do {
             try await ModelRunner.shared.loadModel(

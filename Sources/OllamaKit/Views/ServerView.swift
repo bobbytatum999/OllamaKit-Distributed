@@ -270,7 +270,7 @@ struct ConnectionInfoCard: View {
                 }
             }
 
-            if viewModel.serverState.isRunning, let serverURL = viewModel.networkURL ?? AppSettings.shared.localServerURL {
+            if viewModel.isRunning, let serverURL = viewModel.networkURL ?? AppSettings.shared.localServerURL {
                 Divider()
                 
                 VStack(spacing: 12) {
