@@ -37,8 +37,6 @@
 		000000010000000000000022 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000111 /* Accelerate.framework */; };
 		000000010000000000000023 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000112 /* Metal.framework */; };
 		000000010000000000000024 /* AnemllCore in Frameworks */ = {isa = PBXBuildFile; productRef = 000000010000000000000A01 /* AnemllCore */; };
-		000000010000000000000025 /* AgentServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011B /* AgentServices.swift */; };
-		000000010000000000000026 /* GeneratedAgentWorkspaceSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011C /* GeneratedAgentWorkspaceSeed.swift */; };
 		000000010000000000000028 /* LocalFilesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011E /* LocalFilesModels.swift */; };
 		000000010000000000000029 /* LocalFilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011F /* LocalFilesSettingsView.swift */; };
 		00000001000000000000002A /* LocalFilesScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000120 /* LocalFilesScanner.swift */; };
@@ -129,8 +127,6 @@
 		000000010000000000000118 /* DeviceCapabilityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCapabilityService.swift; sourceTree = "<group>"; };
 		000000010000000000000119 /* GGUFBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GGUFBackend.swift; sourceTree = "<group>"; };
 		00000001000000000000011A /* RuntimeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeCoordinator.swift; sourceTree = "<group>"; };
-		00000001000000000000011B /* AgentServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentServices.swift; sourceTree = "<group>"; };
-		00000001000000000000011C /* GeneratedAgentWorkspaceSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedAgentWorkspaceSeed.swift; sourceTree = "<group>"; };
 		00000001000000000000011E /* LocalFilesModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesModels.swift; sourceTree = "<group>"; };
 		00000001000000000000011F /* LocalFilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesSettingsView.swift; sourceTree = "<group>"; };
 		000000010000000000000120 /* LocalFilesScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesScanner.swift; sourceTree = "<group>"; };
@@ -217,8 +213,6 @@
 		000000010000000000000500 /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				00000001000000000000011B /* AgentServices.swift */,
-				00000001000000000000011C /* GeneratedAgentWorkspaceSeed.swift */,
 				000000010000000000000120 /* LocalFilesScanner.swift */,
 				000000010000000000000121 /* LocalFilesTool.swift */,
 				000000010000000000000108 /* ServerManager.swift */,
@@ -371,8 +365,6 @@
 				000000010000000000000028 /* LocalFilesModels.swift in Sources */,
 				000000010000000000000018 /* SurfaceSectionCard.swift in Sources */,
 				000000010000000000000019 /* UnifiedModelCatalog.swift in Sources */,
-				000000010000000000000025 /* AgentServices.swift in Sources */,
-				000000010000000000000026 /* GeneratedAgentWorkspaceSeed.swift in Sources */,
 				00000001000000000000002A /* LocalFilesScanner.swift in Sources */,
 				00000001000000000000002B /* LocalFilesTool.swift in Sources */,
 			);
