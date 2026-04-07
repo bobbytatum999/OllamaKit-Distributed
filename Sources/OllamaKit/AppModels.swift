@@ -1064,6 +1064,15 @@ final class AppSettings: ObservableObject {
     @Published var batchSize: Int { didSet { save(batchSize, for: Keys.batchSize) } }
     @Published var gpuLayers: Int { didSet { save(gpuLayers, for: Keys.gpuLayers) } }
     @Published var kvCachePresetRaw: String { didSet { save(kvCachePresetRaw, for: Keys.kvCachePresetRaw) } }
+    @Published var turboQuantMode: RuntimePreferences.TurboQuantMode {
+        didSet { save(turboQuantMode.rawValue, for: Keys.turboQuantMode) }
+    }
+    @Published var kvCacheTypeK: RuntimePreferences.KVCacheQuantization {
+        didSet { save(kvCacheTypeK.rawValue, for: Keys.kvCacheTypeK) }
+    }
+    @Published var kvCacheTypeV: RuntimePreferences.KVCacheQuantization {
+        didSet { save(kvCacheTypeV.rawValue, for: Keys.kvCacheTypeV) }
+    }
     @Published var flashAttentionEnabled: Bool { didSet { save(flashAttentionEnabled, for: Keys.flashAttentionEnabled) } }
     @Published var mmapEnabled: Bool { didSet { save(mmapEnabled, for: Keys.mmapEnabled) } }
     @Published var mlockEnabled: Bool { didSet { save(mlockEnabled, for: Keys.mlockEnabled) } }
@@ -1164,6 +1173,9 @@ final class AppSettings: ObservableObject {
         batchSize = defaults.object(forKey: Keys.batchSize) as? Int ?? 512
         gpuLayers = defaults.object(forKey: Keys.gpuLayers) as? Int ?? Self.recommendedGPULayers
         kvCachePresetRaw = defaults.string(forKey: Keys.kvCachePresetRaw) ?? RuntimePreferences.KVCachePreset.platformDefault.rawValue
+        turboQuantMode = RuntimePreferences.TurboQuantMode(rawValue: defaults.string(forKey: Keys.turboQuantMode) ?? "") ?? .disabled
+        kvCacheTypeK = RuntimePreferences.KVCacheQuantization(rawValue: defaults.string(forKey: Keys.kvCacheTypeK) ?? "") ?? .float16
+        kvCacheTypeV = RuntimePreferences.KVCacheQuantization(rawValue: defaults.string(forKey: Keys.kvCacheTypeV) ?? "") ?? .float16
         flashAttentionEnabled = defaults.object(forKey: Keys.flashAttentionEnabled) as? Bool ?? false
         mmapEnabled = defaults.object(forKey: Keys.mmapEnabled) as? Bool ?? true
         mlockEnabled = defaults.object(forKey: Keys.mlockEnabled) as? Bool ?? false
@@ -1331,6 +1343,9 @@ final class AppSettings: ObservableObject {
         batchSize = 512
         gpuLayers = Self.recommendedGPULayers
         kvCachePresetRaw = RuntimePreferences.KVCachePreset.platformDefault.rawValue
+        turboQuantMode = .disabled
+        kvCacheTypeK = .float16
+        kvCacheTypeV = .float16
         flashAttentionEnabled = false
         mmapEnabled = true
         mlockEnabled = false
@@ -1449,6 +1464,9 @@ final class AppSettings: ObservableObject {
         static let batchSize = "batchSize"
         static let gpuLayers = "gpuLayers"
         static let kvCachePresetRaw = "kvCachePresetRaw"
+        static let turboQuantMode = "turboQuantMode"
+        static let kvCacheTypeK = "kvCacheTypeK"
+        static let kvCacheTypeV = "kvCacheTypeV"
         static let flashAttentionEnabled = "flashAttentionEnabled"
         static let mmapEnabled = "mmapEnabled"
         static let mlockEnabled = "mlockEnabled"
