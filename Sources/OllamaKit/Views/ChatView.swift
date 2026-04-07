@@ -258,6 +258,13 @@ struct ChatView: View {
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.errorMessage = nil } }
         )) {
+            Button("Retry") {
+                let lastMsg = viewModel.lastSentMessage
+                viewModel.errorMessage = nil
+                if !lastMsg.isEmpty {
+                    Task { await viewModel.sendMessage(lastMsg, in: session, context: modelContext) }
+                }
+            }
             Button("OK", role: .cancel) {}
         } message: {
             Text(viewModel.errorMessage ?? "")
@@ -652,9 +659,11 @@ class ChatViewModel: ObservableObject {
     @Published var isGenerating = false
     @Published var currentModel: ModelSnapshot?
     @Published var errorMessage: String?
+    @Published var lastSentMessage: String = ""
     @Published var streamRevision = 0
     
     func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters = .appDefault) async {
+        lastSentMessage = content
         guard let model = currentModel else {
             AppLogStore.shared.record(
                 .chat,
