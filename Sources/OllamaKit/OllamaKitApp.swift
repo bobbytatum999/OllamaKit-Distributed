@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import OllamaCore
 
 @main
 struct OllamaKitApp: App {
@@ -36,7 +37,13 @@ struct OllamaKitApp: App {
             let persistentConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
             return try ModelContainer(for: schema, configurations: [persistentConfig])
         } catch {
-            print("Falling back to in-memory SwiftData store after persistent store failure: \(error)")
+            AppLogStore.shared.record(
+                category: .app,
+                level: .warning,
+                title: "SwiftData Persistent Store Failed",
+                message: "Falling back to in-memory store: \(error.localizedDescription)",
+                metadata: ["error": error.localizedDescription]
+            )
         }
 
         do {

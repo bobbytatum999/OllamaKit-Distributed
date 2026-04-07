@@ -559,7 +559,7 @@ final class ServerManager {
             stateLock.withLock {
                 isStarting = false
             }
-            log(.listener, level: .error, title: "Invalid Port", message: "Server port \(configuredPort) is outside the supported range.")
+            log(.listener, level: .error, title: "Server Startup Failed", message: "Invalid port: \(configuredPort)")
             return
         }
 
@@ -568,13 +568,13 @@ final class ServerManager {
             stateLock.withLock {
                 isStarting = false
             }
-            log(.listener, level: .error, title: "Missing Custom Public URL", message: "Custom Public URL mode requires a valid external HTTP or HTTPS URL.")
+            log(.listener, level: .error, title: "Server Startup Failed", message: "Custom Public URL mode requires a valid external HTTP or HTTPS URL.")
             return
         case .publicManaged where AppSettings.shared.normalizedManagedRelayBaseURL == nil:
             stateLock.withLock {
                 isStarting = false
             }
-            log(.listener, level: .error, title: "Missing Relay Service URL", message: "Managed Public URL mode requires a valid relay service URL.")
+            log(.listener, level: .error, title: "Server Startup Failed", message: "Managed Public URL mode requires a valid relay service URL.")
             return
         default:
             break
@@ -582,12 +582,12 @@ final class ServerManager {
 
         log(
             .listener,
-            title: "Starting Server",
+            level: .info,
+            title: "Server Startup Initiated",
             message: "Starting API listener.",
             metadata: [
                 "port": String(configuredPort),
-                "exposure_mode": AppSettings.shared.serverExposureMode.rawValue,
-                "canonical_url": AppSettings.shared.serverURL
+                "exposure": AppSettings.shared.serverExposureMode.rawValue
             ]
         )
 
@@ -630,7 +630,7 @@ final class ServerManager {
             stateLock.withLock {
                 isStarting = false
             }
-            log(.listener, level: .error, title: "Listener Creation Failed", message: error.localizedDescription)
+            log(.listener, level: .error, title: "Server Startup Failed", message: error.localizedDescription)
         }
     }
 
@@ -655,7 +655,7 @@ final class ServerManager {
 
         state.2?.resume()
         await ManagedRelayService.shared.stop(reason: "Server stopped.")
-        log(.listener, title: "Server Stopped", message: "The API listener was stopped.")
+        log(.listener, level: .info, title: "Server Stopped", message: "The API listener was stopped.")
     }
 
     func restartServerIfRunning() async {
@@ -684,12 +684,13 @@ final class ServerManager {
             }
             log(
                 .listener,
-                title: "Listener Ready",
+                level: .info,
+                title: "Server Started",
                 message: "Server listening on port \(port.rawValue).",
                 metadata: [
                     "port": String(port.rawValue),
-                    "exposure_mode": AppSettings.shared.serverExposureMode.rawValue,
-                    "canonical_url": AppSettings.shared.serverURL
+                    "exposure": AppSettings.shared.serverExposureMode.rawValue,
+                    "url": AppSettings.shared.serverURL
                 ]
             )
         case .failed(let error):
@@ -701,7 +702,7 @@ final class ServerManager {
             Task { @MainActor in
                 await ManagedRelayService.shared.stop(reason: "Listener failed.")
             }
-            log(.listener, level: .error, title: "Listener Failed", message: error.localizedDescription)
+            log(.listener, level: .error, title: "Server Startup Failed", message: error.localizedDescription)
         case .cancelled:
             stateLock.withLock {
                 isRunning = false
@@ -718,17 +719,25 @@ final class ServerManager {
     }
 
     private func handleConnection(_ connection: NWConnection) {
+        let remoteAddress = remoteAddress(for: connection)
+
         stateLock.withLock {
             connections[ObjectIdentifier(connection)] = connection
         }
 
         connection.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
             switch state {
-            case .cancelled, .failed:
-                guard let self else { return }
+            case .cancelled:
                 self.stateLock.withLock {
                     _ = self.connections.removeValue(forKey: ObjectIdentifier(connection))
                 }
+                self.log(.connection, level: .info, title: "Client Disconnected", message: "Connection closed.", metadata: ["remote": remoteAddress])
+            case .failed(let error):
+                self.stateLock.withLock {
+                    _ = self.connections.removeValue(forKey: ObjectIdentifier(connection))
+                }
+                self.log(.connection, level: .error, title: "Connection Error", message: error.localizedDescription, metadata: ["remote": remoteAddress, "error": error.localizedDescription])
             default:
                 break
             }
@@ -736,8 +745,7 @@ final class ServerManager {
 
         connection.start(queue: queue)
 
-        let remoteAddress = remoteAddress(for: connection)
-        log(.connection, title: "Connection Accepted", message: "Accepted inbound connection.", metadata: ["remote": remoteAddress])
+        log(.connection, level: .info, title: "Client Connected", message: "Accepted inbound connection.", metadata: ["remote": remoteAddress])
 
         guard allowsConnection(connection) else {
             sendErrorResponse(

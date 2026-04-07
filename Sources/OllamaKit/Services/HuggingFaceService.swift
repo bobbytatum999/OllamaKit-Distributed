@@ -25,6 +25,16 @@ final class HuggingFaceService: @unchecked Sendable {
     }
 
     func searchModels(query: String, limit: Int = 20) async throws -> [HuggingFaceModel] {
+        await MainActor.run {
+            AppLogStore.shared.record(
+                category: .huggingFace,
+                level: .debug,
+                title: "HF Search Started",
+                message: "Searching for: \(query)",
+                metadata: ["query": query, "limit": "\(limit)"]
+            )
+        }
+
         guard let baseURL = URL(string: baseURLString) else {
             throw URLError(.badURL)
         }
@@ -44,10 +54,32 @@ final class HuggingFaceService: @unchecked Sendable {
 
         let (data, response) = try await session.data(for: authorizedRequest(url: url))
         try validate(response: response)
-        return try decoder.decode([HuggingFaceModel].self, from: data)
+        let results = try decoder.decode([HuggingFaceModel].self, from: data)
+
+        await MainActor.run {
+            AppLogStore.shared.record(
+                category: .huggingFace,
+                level: .info,
+                title: "HF Search Completed",
+                message: "Found \(results.count) models for: \(query)",
+                metadata: ["query": query, "result_count": "\(results.count)"]
+            )
+        }
+
+        return results
     }
 
     func getTrendingModels(limit: Int = 20) async throws -> [HuggingFaceModel] {
+        await MainActor.run {
+            AppLogStore.shared.record(
+                category: .huggingFace,
+                level: .debug,
+                title: "HF Trending Started",
+                message: "Fetching trending models",
+                metadata: ["limit": "\(limit)"]
+            )
+        }
+
         guard let baseURL = URL(string: baseURLString) else {
             throw URLError(.badURL)
         }
@@ -66,12 +98,37 @@ final class HuggingFaceService: @unchecked Sendable {
 
         let (data, response) = try await session.data(for: authorizedRequest(url: url))
         try validate(response: response)
-        return try decoder.decode([HuggingFaceModel].self, from: data)
+        let results = try decoder.decode([HuggingFaceModel].self, from: data)
+
+        await MainActor.run {
+            AppLogStore.shared.record(
+                category: .huggingFace,
+                level: .info,
+                title: "HF Trending Completed",
+                message: "Found \(results.count) trending models",
+                metadata: ["result_count": "\(results.count)"]
+            )
+        }
+
+        return results
     }
 
     func searchModelsDetailed(query: String, limit: Int = 20) async throws -> [HuggingFaceModel] {
         let results = try await searchModels(query: query, limit: limit)
-        return try await hydrate(models: results)
+        let detailedResults = try await hydrate(models: results)
+
+        await MainActor.run {
+            let modelNames = detailedResults.prefix(5).map { $0.displayName }.joined(separator: ", ")
+            AppLogStore.shared.record(
+                category: .huggingFace,
+                level: .info,
+                title: "HF Detailed Search Completed",
+                message: "Found \(detailedResults.count) detailed models for: \(query)",
+                metadata: ["query": query, "result_count": "\(detailedResults.count)", "first_models": modelNames]
+            )
+        }
+
+        return detailedResults
     }
 
     func getModelFiles(modelId: String) async throws -> [GGUFInfo] {
@@ -109,6 +166,16 @@ final class HuggingFaceService: @unchecked Sendable {
     }
 
     func getModelDetails(modelId: String) async throws -> HuggingFaceModel {
+        await MainActor.run {
+            AppLogStore.shared.record(
+                category: .huggingFace,
+                level: .debug,
+                title: "HF Model Details Requested",
+                message: "Fetching details for: \(modelId)",
+                metadata: ["model_id": modelId]
+            )
+        }
+
         let url = try repoAPIURL(modelId: modelId)
         let (data, response) = try await session.data(for: authorizedRequest(url: url))
         try validate(response: response)
@@ -241,6 +308,16 @@ final class HuggingFaceService: @unchecked Sendable {
         modelId: String,
         progressHandler: @escaping (DownloadProgress) -> Void
     ) async throws -> DownloadedModel {
+        await MainActor.run {
+            AppLogStore.shared.record(
+                category: .huggingFace,
+                level: .info,
+                title: "HF Model Download Started",
+                message: "Downloading: \(modelId)",
+                metadata: ["model_id": modelId, "file": filename]
+            )
+        }
+
         try ModelPathHelper.ensureModelsDirectoryExists()
 
         var destinationDirectory = ModelPathHelper.modelsDirectoryURL
@@ -259,7 +336,18 @@ final class HuggingFaceService: @unchecked Sendable {
             let (temporaryURL, response) = try await download(
                 request: authorizedRequest(url: url),
                 id: url.absoluteString,
-                progressHandler: progressHandler
+                progressHandler: { progress in
+                    Task { @MainActor in
+                        AppLogStore.shared.record(
+                            category: .huggingFace,
+                            level: .debug,
+                            title: "HF Download Progress",
+                            message: "Downloading: \(modelId)",
+                            metadata: ["model_id": modelId, "bytes_written": "\(progress.downloadedBytes)", "total_bytes": "\(progress.totalBytes)"]
+                        )
+                    }
+                    progressHandler(progress)
+                }
             )
             try validate(response: response)
             try Task.checkCancellation()
@@ -276,6 +364,16 @@ final class HuggingFaceService: @unchecked Sendable {
             let fileSize = (try FileManager.default.attributesOfItem(atPath: destinationURL.path)[.size] as? NSNumber)?.int64Value ?? 0
             progressHandler(DownloadProgress(totalBytes: fileSize, downloadedBytes: fileSize, progress: 1, speed: 0))
 
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    category: .huggingFace,
+                    level: .info,
+                    title: "HF Model Download Completed",
+                    message: "Downloaded: \(modelId)",
+                    metadata: ["model_id": modelId, "destination": destinationURL.path, "size_bytes": "\(fileSize)"]
+                )
+            }
+
             return DownloadedModel(
                 name: filename.replacingOccurrences(of: ".gguf", with: ""),
                 modelId: modelId,
@@ -289,11 +387,29 @@ final class HuggingFaceService: @unchecked Sendable {
             )
         } catch {
             try? FileManager.default.removeItem(at: stagedURL)
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    category: .huggingFace,
+                    level: .error,
+                    title: "HF Download Failed",
+                    message: "Failed to download \(modelId): \(error.localizedDescription)",
+                    metadata: ["model_id": modelId, "error": error.localizedDescription]
+                )
+            }
             throw error
         }
     }
 
     func cancelDownload(id: String) {
+        await MainActor.run {
+            AppLogStore.shared.record(
+                category: .huggingFace,
+                level: .warning,
+                title: "HF Download Cancelled",
+                message: "Download cancelled: \(id)",
+                metadata: ["model_id": id]
+            )
+        }
         activeDownloadsLock.withLock {
             activeDownloads[id]?.task.cancel()
         }
@@ -333,6 +449,16 @@ final class HuggingFaceService: @unchecked Sendable {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            let statusCode = httpResponse.statusCode
+            Task { @MainActor in
+                AppLogStore.shared.record(
+                    category: .huggingFace,
+                    level: .error,
+                    title: "HF HTTP Error",
+                    message: "HTTP request failed with status: \(statusCode)",
+                    metadata: ["status_code": "\(statusCode)"]
+                )
+            }
             throw NSError(
                 domain: "HuggingFaceService",
                 code: httpResponse.statusCode,
@@ -363,15 +489,42 @@ final class HuggingFaceService: @unchecked Sendable {
                 completedDownload?.observation.invalidate()
 
                 if let error {
+                    Task { @MainActor in
+                        AppLogStore.shared.record(
+                            category: .huggingFace,
+                            level: .error,
+                            title: "HF Download Failed",
+                            message: "Download session failed: \(error.localizedDescription)",
+                            metadata: ["model_id": id, "error": error.localizedDescription]
+                        )
+                    }
                     continuation.resume(throwing: error)
                     return
                 }
 
                 guard let temporaryURL, let response else {
+                    Task { @MainActor in
+                        AppLogStore.shared.record(
+                            category: .huggingFace,
+                            level: .debug,
+                            title: "HF Download Session Ended",
+                            message: "Download session ended for: \(id)",
+                            metadata: ["model_id": id]
+                        )
+                    }
                     continuation.resume(throwing: URLError(.badServerResponse))
                     return
                 }
 
+                Task { @MainActor in
+                    AppLogStore.shared.record(
+                        category: .huggingFace,
+                        level: .debug,
+                        title: "HF Download Session Ended",
+                        message: "Download session completed for: \(id)",
+                        metadata: ["model_id": id]
+                    )
+                }
                 continuation.resume(returning: (temporaryURL, response))
             }
 

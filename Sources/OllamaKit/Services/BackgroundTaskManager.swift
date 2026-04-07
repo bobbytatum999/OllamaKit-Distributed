@@ -1,5 +1,6 @@
 import Foundation
 import BackgroundTasks
+import OllamaCore
 
 class BackgroundTaskManager {
     static let shared = BackgroundTaskManager()
@@ -19,7 +20,25 @@ class BackgroundTaskManager {
             self?.handleBackgroundTask(processingTask)
         }
         if !registered {
-            print("Failed to register background task identifier: \(backgroundTaskIdentifier)")
+            Task { @MainActor in
+                AppLogStore.shared.record(
+                    category: .app,
+                    level: .error,
+                    title: "Failed to register background task identifier",
+                    message: "Could not register: \(backgroundTaskIdentifier)",
+                    metadata: ["task_id": backgroundTaskIdentifier]
+                )
+            }
+        } else {
+            Task { @MainActor in
+                AppLogStore.shared.record(
+                    category: .app,
+                    level: .info,
+                    title: "Background Task Registered",
+                    message: "Registered background task: \(backgroundTaskIdentifier)",
+                    metadata: ["task_id": backgroundTaskIdentifier]
+                )
+            }
         }
     }
     
@@ -34,7 +53,15 @@ class BackgroundTaskManager {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: backgroundTaskIdentifier)
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            print("Failed to schedule background task: \(error)")
+            Task { @MainActor in
+                AppLogStore.shared.record(
+                    category: .app,
+                    level: .error,
+                    title: "Failed to schedule background task",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
     }
 
