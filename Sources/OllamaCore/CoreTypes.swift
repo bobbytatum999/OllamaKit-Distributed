@@ -895,31 +895,31 @@ public struct LegacyDownloadedModelSeed: Sendable {
 }
 
 public struct RuntimePreferences: Hashable, Sendable {
-    public enum KVCacheQuantization: String, Codable, CaseIterable, Sendable {
-        case float16
-        case float32
+    public enum KVCachePreset: String, CaseIterable, Sendable {
+        case platformDefault
         case q8_0
-        case q6_K
-        case q5_0
-        case q4_0
-    }
+        case googleTurboQ4
 
-    public enum TurboQuantMode: String, Codable, CaseIterable, Sendable {
-        case disabled
-        case googleTurboQuantBalanced
-        case googleTurboQuantAggressive
+        public var title: String {
+            switch self {
+            case .platformDefault:
+                return "Default"
+            case .q8_0:
+                return "Q8_0"
+            case .googleTurboQ4:
+                return "Google Turbo (Q4_0)"
+            }
+        }
     }
 
     public var contextLength: Int
     public var gpuLayers: Int
     public var threads: Int
     public var batchSize: Int
+    public var kvCachePreset: KVCachePreset
     public var flashAttentionEnabled: Bool
     public var mmapEnabled: Bool
     public var mlockEnabled: Bool
-    public var turboQuantMode: TurboQuantMode
-    public var kvCacheTypeK: KVCacheQuantization
-    public var kvCacheTypeV: KVCacheQuantization
     public var keepModelInMemory: Bool
     public var autoOffloadMinutes: Int
 
@@ -928,12 +928,10 @@ public struct RuntimePreferences: Hashable, Sendable {
         gpuLayers: Int = 0,
         threads: Int = 1,
         batchSize: Int = 512,
+        kvCachePreset: KVCachePreset = .platformDefault,
         flashAttentionEnabled: Bool = false,
         mmapEnabled: Bool = true,
         mlockEnabled: Bool = false,
-        turboQuantMode: TurboQuantMode = .disabled,
-        kvCacheTypeK: KVCacheQuantization = .float16,
-        kvCacheTypeV: KVCacheQuantization = .float16,
         keepModelInMemory: Bool = false,
         autoOffloadMinutes: Int = 5
     ) {
@@ -941,21 +939,10 @@ public struct RuntimePreferences: Hashable, Sendable {
         self.gpuLayers = max(gpuLayers, 0)
         self.threads = max(threads, 1)
         self.batchSize = max(batchSize, 32)
+        self.kvCachePreset = kvCachePreset
         self.flashAttentionEnabled = flashAttentionEnabled
         self.mmapEnabled = mmapEnabled
         self.mlockEnabled = mlockEnabled
-        self.turboQuantMode = turboQuantMode
-        switch turboQuantMode {
-        case .disabled:
-            self.kvCacheTypeK = kvCacheTypeK
-            self.kvCacheTypeV = kvCacheTypeV
-        case .googleTurboQuantBalanced:
-            self.kvCacheTypeK = .q8_0
-            self.kvCacheTypeV = .q8_0
-        case .googleTurboQuantAggressive:
-            self.kvCacheTypeK = .q8_0
-            self.kvCacheTypeV = .q4_0
-        }
         self.keepModelInMemory = keepModelInMemory
         self.autoOffloadMinutes = max(autoOffloadMinutes, 1)
     }
@@ -966,12 +953,10 @@ public struct RuntimePreferences: Hashable, Sendable {
             gpuLayers: 0,
             threads: max(min(ProcessInfo.processInfo.activeProcessorCount, 4), 1),
             batchSize: 128,
+            kvCachePreset: .platformDefault,
             flashAttentionEnabled: false,
             mmapEnabled: true,
             mlockEnabled: false,
-            turboQuantMode: .disabled,
-            kvCacheTypeK: .float16,
-            kvCacheTypeV: .float16,
             keepModelInMemory: false,
             autoOffloadMinutes: 1
         )
@@ -1132,13 +1117,22 @@ public enum ConversationPrompting {
 
         let conversation = normalizedTurns(turns)
             .compactMap { turn -> String? in
+                // Check if this turn has image parts (for vision models)
+                let hasImages = turn.parts?.contains(where: { $0.kind == .imageURL }) ?? false
+                var turnContent = turn.content
+                // For vision models: prepend image placeholder token(s)
+                if hasImages {
+                    let imagePlaceholders = " <image>\n"
+                    turnContent = imagePlaceholders + turnContent
+                }
+
                 switch turn.role {
                 case "system":
-                    return "System:\n\(turn.content)"
+                    return "System:\n\(turnContent)"
                 case "assistant":
-                    return "Assistant:\n\(turn.content)"
+                    return "Assistant:\n\(turnContent)"
                 case "user":
-                    return "User:\n\(turn.content)"
+                    return "User:\n\(turnContent)"
                 default:
                     return nil
                 }

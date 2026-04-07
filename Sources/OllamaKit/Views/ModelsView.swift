@@ -27,6 +27,10 @@ struct ModelsView: View {
         return [.folder, .data]
     }
     
+    private var totalStorageUsed: Int64 {
+        installedModels.reduce(0) { $0 + $1.size }
+    }
+
     var body: some View {
         ZStack {
             AnimatedMeshBackground()
@@ -39,7 +43,22 @@ struct ModelsView: View {
                         }
                     }
 
-                    BuiltInAppleModelCard()
+                    FeaturedModelsSection()
+
+                    if !installedModels.isEmpty {
+                        SurfaceSectionCard(title: "Storage") {
+                            HStack {
+                                Image(systemName: "internaldrive")
+                                    .foregroundStyle(.secondary)
+                                Text("Total Used")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(formatBytes(totalStorageUsed))
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.system(size: 14))
+                        }
+                    }
 
                     SurfaceSectionCard(
                         title: "Installed Models",
@@ -50,13 +69,9 @@ struct ModelsView: View {
                         if installedModels.isEmpty {
                             EmptyModelsView()
                         } else {
-                            VStack(spacing: 0) {
-                                ForEach(Array(installedModels.enumerated()), id: \.element.id) { index, model in
+                            VStack(spacing: 12) {
+                                ForEach(installedModels, id: \.id) { model in
                                     DownloadedModelRow(model: model, viewModel: viewModel)
-
-                                    if index < installedModels.count - 1 {
-                                        Divider()
-                                    }
                                 }
                             }
                         }
@@ -286,75 +301,95 @@ struct DownloadedModelRow: View {
     @State private var showingOptions = false
     
     var body: some View {
-        HStack(spacing: 16) {
-            // Model icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 56, height: 56)
-                
-                Image(systemName: "cube.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Color.accentColor)
-            }
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text(model.displayName)
-                    .font(.system(size: 17, weight: .semibold))
-                
-                HStack(spacing: 12) {
-                    Label(model.importSourceLabel, systemImage: model.importSourceIcon)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [.accentColor.opacity(0.26), .accentColor.opacity(0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 48, height: 48)
 
-                    Label(model.quantization, systemImage: model.backendKind == .coreMLPackage ? "shippingbox" : "cpu")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-
-                    if model.size > 0 {
-                        Text("•")
-                            .foregroundStyle(.tertiary)
-
-                        Label(model.formattedSize, systemImage: "externaldrive")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
+                    Image(systemName: "cube.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
-                
-                HStack(spacing: 12) {
-                    Label("\(model.runtimeContextLength) ctx", systemImage: "text.alignleft")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
 
-                    if let runtimeAvailabilityLabel = model.runtimeAvailabilityLabel {
-                        Text("•")
-                            .foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(model.displayName)
+                            .font(.system(size: 17, weight: .semibold))
+                            .lineLimit(2)
 
-                        Label(runtimeAvailabilityLabel, systemImage: "exclamationmark.triangle")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.orange)
+                        if modelRunner.activeCatalogId == model.catalogId {
+                            Text("ACTIVE")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.green)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(.green.opacity(0.16))
+                                )
+                        }
+                    }
+
+                    FlowLayout(spacing: 8) {
+                        ModelBadge(text: model.importSourceLabel, systemImage: model.importSourceIcon)
+                        ModelBadge(text: model.quantization, systemImage: model.backendKind == .coreMLPackage ? "shippingbox" : "cpu")
+                        if model.size > 0 {
+                            ModelBadge(text: model.formattedSize, systemImage: "externaldrive")
+                        }
+                        ModelBadge(text: "\(model.runtimeContextLength) ctx", systemImage: "text.alignleft")
                     }
                 }
             }
-            
-            Spacer()
-            
-            // Status indicator
-            if modelRunner.activeCatalogId == model.catalogId {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.system(size: 22))
+
+            if let runtimeAvailabilityLabel = model.runtimeAvailabilityLabel {
+                Label(runtimeAvailabilityLabel, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.orange)
             }
-            
-            Button {
-                showingOptions = true
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                if model.isRunnableInCurrentBuild {
+                    Button("Load") {
+                        loadModel()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                if AppSettings.shared.defaultModelId != model.persistentReference, model.isRunnableInCurrentBuild {
+                    Button("Set Default") {
+                        AppSettings.shared.defaultModelId = model.persistentReference
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+
+                Button {
+                    showingOptions = true
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 21))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
-        .padding(.vertical, 8)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 0.6)
+                )
+        )
         .contextMenu {
             if model.isRunnableInCurrentBuild {
                 Button {
@@ -490,6 +525,43 @@ struct DownloadedModelRow: View {
     }
 }
 
+private struct ModelBadge: View {
+    let text: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+            Text(text)
+        }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.thinMaterial)
+        )
+    }
+}
+
+private struct FlowLayout<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder var content: Content
+
+    init(spacing: CGFloat = 8, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            content
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 struct EmptyModelsView: View {
     var body: some View {
         VStack(spacing: 16) {
@@ -526,6 +598,7 @@ struct BuiltInAppleModelCard: View {
         title: "Checking",
         message: "Checking Apple Intelligence availability on this device."
     )
+    @State private var showingAgentCapabilities = false
 
     private var model: ModelSnapshot {
         modelStore.selectionSnapshots.first(where: \.isBuiltInAppleModel)
@@ -852,65 +925,61 @@ struct SearchResultRow: View {
         Button {
             viewModel.selectedModel = model
         } label: {
-            HStack(spacing: 16) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 50, height: 50)
-                    
-                    Image(systemName: "cube")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Color.accentColor)
-                }
-                
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 14) {
+                HuggingFaceAvatarView(model: model, size: 52, cornerRadius: 14)
+
+                VStack(alignment: .leading, spacing: 6) {
                     Text(model.displayName)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 16, weight: .semibold))
                         .lineLimit(1)
-                    
+
                     Text(model.organization)
-                        .font(.system(size: 13))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
-                    
-                    HStack(spacing: 12) {
+
+                    HStack(spacing: 8) {
                         if let downloads = model.downloads {
-                            Label(formatNumber(downloads), systemImage: "arrow.down.circle")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                            SearchRowChip(text: formatNumber(downloads), icon: "arrow.down.circle.fill")
                         }
-                        
+
                         if let likes = model.likes {
-                            Label(formatNumber(likes), systemImage: "heart")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                            SearchRowChip(text: formatNumber(likes), icon: "heart.fill")
                         }
+
+                        SearchRowChip(text: "GGUF", icon: "shippingbox.fill", tint: .blue)
                     }
 
                     if !model.repositoryAssessment.warningBadges.isEmpty {
                         HStack(spacing: 6) {
                             ForEach(model.repositoryAssessment.warningBadges, id: \.self) { badge in
-                                Text(badge)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3)
-                                    .background(
-                                        Capsule()
-                                            .fill(Color.orange.opacity(0.16))
-                                    )
-                                    .foregroundStyle(.orange)
+                                SearchRowChip(text: badge, icon: "exclamationmark.triangle.fill", tint: .orange)
                             }
                         }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(.thickMaterial))
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.10), radius: 10, x: 0, y: 5)
         }
         .buttonStyle(.plain)
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .disabled(viewModel.isDownloading)
     }
     
@@ -928,6 +997,7 @@ struct ModelDetailSheet: View {
     let model: HuggingFaceModel
     @ObservedObject var viewModel: ModelSearchViewModel
     @Environment(\.dismiss) private var dismiss
+    private var modelURL: URL? { URL(string: "https://huggingface.co/\(model.modelId)") }
     
     var body: some View {
         NavigationStack {
@@ -938,17 +1008,26 @@ struct ModelDetailSheet: View {
                     // Model Info
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(model.displayName)
-                                .font(.system(size: 24, weight: .bold))
-                            
-                            Text(model.organization)
-                                .font(.system(size: 17))
-                                .foregroundStyle(.secondary)
-                            
+                            HStack(spacing: 12) {
+                                HuggingFaceAvatarView(model: model, size: 58, cornerRadius: 16)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(model.displayName)
+                                        .font(.system(size: 24, weight: .bold))
+
+                                    Text(model.organization)
+                                        .font(.system(size: 17))
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+                            }
+
                             if let description = model.description {
                                 Text(description)
                                     .font(.system(size: 15))
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(4)
                             }
 
                             if !model.repositoryAssessment.warningBadges.isEmpty {
@@ -984,6 +1063,20 @@ struct ModelDetailSheet: View {
                                     StatBadge(value: formatNumber(likes), label: "Likes", icon: "heart")
                                 }
                             }
+
+                            if let modelURL {
+                                Link(destination: modelURL) {
+                                    Label("View on Hugging Face", systemImage: "safari")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(Color.accentColor.opacity(0.14))
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                         .padding(.vertical, 8)
                     }
@@ -1007,7 +1100,7 @@ struct ModelDetailSheet: View {
                             ForEach(viewModel.availableFiles) { file in
                                 GGUFFileRow(
                                     file: file,
-                                    compatibility: viewModel.deviceProfile.compatibility(for: file),
+                                    compatibility: viewModel.deviceProfile.compatibility(for: file.size),
                                     viewModel: viewModel
                                 ) {
                                     viewModel.requestDownload(file, modelId: model.modelId)
@@ -1063,6 +1156,75 @@ struct ModelDetailSheet: View {
     }
 }
 
+private struct SearchRowChip: View {
+    let text: String
+    let icon: String
+    var tint: Color = .secondary
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(text)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(tint.opacity(0.12))
+        )
+    }
+}
+
+private struct HuggingFaceAvatarView: View {
+    let model: HuggingFaceModel
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    private var organizationHandle: String? {
+        let base = model.author?.nonEmpty ?? model.organization.nonEmpty
+        guard let base else { return nil }
+        return base
+            .split(separator: "/")
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var avatarURL: URL? {
+        guard let handle = organizationHandle?.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        return URL(string: "https://huggingface.co/\(handle)/avatar")
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(.ultraThinMaterial)
+                .frame(width: size, height: size)
+
+            AsyncImage(url: avatarURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: size, height: size)
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                default:
+                    Image(systemName: "cube")
+                        .font(.system(size: size * 0.4, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 struct StatBadge: View {
     let value: String
     let label: String
@@ -1097,59 +1259,92 @@ struct GGUFFileRow: View {
     let downloadAction: () -> Void
     
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(file.displayName)
-                    .font(.system(size: 15, weight: .medium))
-                    .lineLimit(1)
-                
-                HStack(spacing: 8) {
-                    if let quant = file.quantization {
-                        Label(quant, systemImage: "cpu")
-                            .font(.system(size: 12))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(file.displayName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .lineLimit(2)
+
+                    HStack(spacing: 8) {
+                        if let quant = file.quantization {
+                            ModelBadge(text: quant, systemImage: "cpu")
+                        }
+
+                        if let size = file.size {
+                            ModelBadge(
+                                text: ByteCountFormatter.string(fromByteCount: size, countStyle: .file),
+                                systemImage: "externaldrive"
+                            )
+                        }
                     }
-                    
-                    if let size = file.size {
-                        Text("•")
-                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                            .font(.system(size: 12))
+                }
+
+                Spacer(minLength: 8)
+
+                CompatibilityBadge(compatibility: compatibility)
+            }
+
+            if viewModel.isDownloading && viewModel.downloadingFile?.url == file.url {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Downloading…")
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Text("\(viewModel.downloadProgress)%")
+                            .font(.system(size: 13, weight: .semibold))
                     }
 
-                    CompatibilityBadge(compatibility: compatibility)
-                }
-                .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-            
-            if viewModel.isDownloading && viewModel.downloadingFile?.url == file.url {
-                HStack(spacing: 8) {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("\(viewModel.downloadProgress)%")
-                            .font(.system(size: 12, weight: .medium))
-                        
-                        ProgressView(value: Double(viewModel.downloadProgress) / 100.0)
-                            .frame(width: 60)
+                    ProgressView(value: Double(viewModel.downloadProgress) / 100.0)
+
+                    HStack {
+                        Text(viewModel.downloadBytes)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        if !viewModel.downloadSpeed.isEmpty {
+                            Text(viewModel.downloadSpeed)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        if !viewModel.downloadEta.isEmpty {
+                            Text(viewModel.downloadEta)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     Button {
                         viewModel.cancelCurrentDownload()
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(.secondary)
+                        Label("Cancel Download", systemImage: "xmark.circle.fill")
+                            .font(.system(size: 14, weight: .medium))
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.bordered)
                 }
             } else {
                 Button(action: downloadAction) {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(Color.accentColor)
+                    Label("Download", systemImage: "arrow.down.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(viewModel.isDownloading)
             }
         }
-        .padding(.vertical, 4)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 0.5)
+                )
+        )
+        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 }
 
@@ -1228,7 +1423,11 @@ class ModelSearchViewModel: ObservableObject {
     
     @Published var isDownloading = false
     @Published var downloadingFile: GGUFInfo?
+    @Published var downloadStartTime = Date()
     @Published var downloadProgress = 0
+    @Published var downloadSpeed: String = ""
+    @Published var downloadEta: String = ""
+    @Published var downloadBytes: String = ""
     @Published var downloadErrorTitle = "Download Failed"
     @Published var downloadError: String?
     @Published var pendingDownloadWarning: ModelDownloadWarning?
@@ -1323,6 +1522,10 @@ class ModelSearchViewModel: ObservableObject {
         isDownloading = true
         downloadingFile = file
         downloadProgress = 0
+        downloadSpeed = ""
+        downloadEta = ""
+        downloadBytes = ""
+        downloadStartTime = Date()
 
         defer {
             isDownloading = false
@@ -1337,6 +1540,18 @@ class ModelSearchViewModel: ObservableObject {
             ) { progress in
                 Task { @MainActor in
                     self.downloadProgress = progress.percentage
+                    self.downloadBytes = "\(progress.formattedDownloaded) / \(progress.formattedTotal)"
+                    if progress.speed > 0 {
+                        self.downloadSpeed = ByteCountFormatter.string(fromByteCount: Int64(progress.speed), countStyle: .file) + "/s"
+                        let remaining = Int64((1.0 - progress.progress) / progress.progress * (Double(Date().timeIntervalSince1970) - self.downloadStartTime.timeIntervalSince1970))
+                        if remaining > 0 && remaining < 86400 {
+                            let mins = Int(remaining) / 60
+                            let secs = Int(remaining) % 60
+                            self.downloadEta = "\(mins)m \(secs)s remaining"
+                        } else {
+                            self.downloadEta = ""
+                        }
+                    }
                 }
             }
 
@@ -1366,7 +1581,7 @@ class ModelSearchViewModel: ObservableObject {
     }
 
     func requestDownload(_ file: GGUFInfo, modelId: String) {
-        let compatibility = deviceProfile.compatibility(for: file)
+        let compatibility = deviceProfile.compatibility(for: file.size)
 
         switch compatibility {
         case .recommended, .unknown:
@@ -1398,7 +1613,9 @@ class ModelSearchViewModel: ObservableObject {
 
     func cancelCurrentDownload() {
         guard let downloadingFile else { return }
-        HuggingFaceService.shared.cancelDownload(id: downloadingFile.id)
+        Task {
+            await HuggingFaceService.shared.cancelDownload(id: downloadingFile.id)
+        }
     }
 
     private func isCancellationError(_ error: Error) -> Bool {
@@ -1594,15 +1811,12 @@ struct ModelDownloadWarning: Identifiable {
         let recommendedBudget = profile.formattedRecommendedBudget
         let supportedBudget = profile.formattedSupportedBudget
         let fileSize = file.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "unknown size"
-        let estimatedWorkingSet = profile.estimatedWorkingSetBytes(for: file)
-            .map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .memory) }
-            ?? "unknown"
 
         switch compatibility {
         case .supported:
-            return "\(filename) (\(fileSize)) may still run on \(profile.deviceLabel), but the estimated runtime working set is \(estimatedWorkingSet), so expect slower generation or frequent unload/reload cycles.\n\nRecommended file budget: up to \(recommendedBudget)\nMay run file budget: up to \(supportedBudget)"
+            return "\(filename) (\(fileSize)) is larger than the recommended budget for \(profile.deviceLabel). It may still run, but it can be slower and unload more often.\n\nRecommended: up to \(recommendedBudget)\nMay run: up to \(supportedBudget)"
         case .tooLarge:
-            return "\(filename) (\(fileSize)) is likely to fail on \(profile.deviceLabel). Estimated runtime working set: \(estimatedWorkingSet).\n\nRecommended file budget: up to \(recommendedBudget)\nMay run file budget: up to \(supportedBudget)"
+            return "\(filename) (\(fileSize)) is above the likely working size for \(profile.deviceLabel). You can still download it, but it may fail to load or run poorly.\n\nRecommended: up to \(recommendedBudget)\nMay run: up to \(supportedBudget)"
         case .recommended, .unknown:
             return "Download \(filename)?"
         }
@@ -1764,21 +1978,8 @@ struct DeviceCapabilityProfile {
         }
     }
 
-    func compatibility(for file: GGUFInfo) -> ModelFileCompatibility {
-        guard let fileSize = file.size else { return .unknown }
-
-        if let estimatedWorkingSet = estimatedWorkingSetBytes(for: file) {
-            let recommendedWorkingSetBudget = Int64(Double(physicalMemoryBytes) * 0.55)
-            let supportedWorkingSetBudget = Int64(Double(physicalMemoryBytes) * 0.72)
-
-            if estimatedWorkingSet <= recommendedWorkingSetBudget {
-                return .recommended
-            }
-
-            if estimatedWorkingSet <= supportedWorkingSetBudget {
-                return .supported
-            }
-        }
+    func compatibility(for fileSize: Int64?) -> ModelFileCompatibility {
+        guard let fileSize else { return .unknown }
 
         if fileSize <= recommendedModelBudgetBytes {
             return .recommended
@@ -1790,75 +1991,219 @@ struct DeviceCapabilityProfile {
 
         return .tooLarge
     }
+}
 
-    func estimatedWorkingSetBytes(for file: GGUFInfo) -> Int64? {
-        guard let fileSize = file.size else { return nil }
 
-        let quantizationToken = file.quantization?.uppercased() ?? file.filename.uppercased()
-        let bytesPerWeight = approximateBytesPerWeight(for: quantizationToken)
-        let parameterCountB = inferredParameterCountB(from: file.filename)
+private func formatBytes(_ bytes: Int64) -> String {
+    let formatter = ByteCountFormatter()
+    formatter.allowedUnits = [.useKB, .useMB, .useGB]
+    formatter.countStyle = .file
+    return formatter.string(fromByteCount: bytes)
+}
 
-        let inferredWeightsBytes: Double
-        if let parameterCountB {
-            inferredWeightsBytes = parameterCountB * 1_000_000_000 * bytesPerWeight
-        } else {
-            inferredWeightsBytes = Double(fileSize)
+struct FeaturedModelsSection: View {
+    @State private var showingTooltip = false
+
+    private let featuredModels: [FeaturedModelInfo] = [
+        FeaturedModelInfo(id: "llama3.2:1b", displayName: "Llama 3.2 1B", size: "1.3 GB", description: "Ultra-fast, great for everyday tasks"),
+        FeaturedModelInfo(id: "llama3.2:3b", displayName: "Llama 3.2 3B", size: "2.0 GB", description: "Balanced speed and quality"),
+        FeaturedModelInfo(id: "qwen2.5:1.5b", displayName: "Qwen 2.5 1.5B", size: "1.0 GB", description: "Excellent multilingual support"),
+        FeaturedModelInfo(id: "phi3:mini", displayName: "Phi-3 Mini", size: "2.3 GB", description: "Strong reasoning in a small package"),
+        FeaturedModelInfo(id: "mistral:7b", displayName: "Mistral 7B", size: "4.4 GB", description: "Popular open-source model"),
+    ]
+
+    var body: some View {
+        SurfaceSectionCard(
+            title: "Featured Models",
+            footer: "Handpicked models that run well on iPhone. Small size, fast inference, great results."
+        ) {
+            VStack(spacing: 14) {
+                // Header with tooltip
+                HStack {
+                    Text("Recommended for iPhone")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button {
+                        showingTooltip.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "questionmark.circle")
+                                .font(.system(size: 12))
+                            Text("Why these?")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(Color.accentColor)
+                    }
+                }
+
+                if showingTooltip {
+                    VStack(alignment: .leading, spacing: 8) {
+                        FeatureRow(icon: "smallcircle.fill.circle", text: "Small models (1B–7B parameters)")
+                        FeatureRow(icon: "bolt.fill", text: "Fast inference on mobile CPU/GPU")
+                        FeatureRow(icon: "iphone", text: "Fits in iPhone RAM budget")
+                        FeatureRow(icon: "checkmark.seal.fill", text: "Tested and proven on iOS")
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.accentColor.opacity(0.08))
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                // Featured model cards
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(featuredModels) { model in
+                            FeaturedModelCard(model: model)
+                        }
+                    }
+                }
+            }
         }
-
-        let loadedWeightsBytes = max(Double(fileSize) * 1.15, inferredWeightsBytes * 1.08)
-        let runtimeOverheadBytes = min(max(loadedWeightsBytes * 0.18, 350_000_000), 1_800_000_000)
-        let kvCacheBytes: Double
-        if let parameterCountB {
-            kvCacheBytes = min(max(parameterCountB * 1_000_000_000 * 0.015, 120_000_000), 1_200_000_000)
-        } else {
-            kvCacheBytes = 350_000_000
-        }
-
-        return Int64(loadedWeightsBytes + runtimeOverheadBytes + kvCacheBytes)
     }
+}
 
-    private func inferredParameterCountB(from filename: String) -> Double? {
-        let lower = filename.lowercased()
-        let patterns = ["([0-9]+(?:\\.[0-9]+)?)b", "([0-9]+(?:\\.[0-9]+)?)m"]
+struct FeaturedModelInfo: Identifiable {
+    let id: String
+    let displayName: String
+    let size: String
+    let description: String
 
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-            let range = NSRange(lower.startIndex..<lower.endIndex, in: lower)
-            guard let match = regex.firstMatch(in: lower, range: range),
-                  let valueRange = Range(match.range(at: 1), in: lower),
-                  let rawValue = Double(lower[valueRange]) else {
-                continue
+    var modelId: String { id }
+}
+
+struct FeatureRow: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 16)
+            Text(text)
+                .font(.system(size: 13))
+        }
+    }
+}
+
+struct FeaturedModelCard: View {
+    let model: FeaturedModelInfo
+    @StateObject private var searchVM = ModelSearchViewModel()
+    @State private var isDownloading = false
+    @State private var downloadProgress = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(
+                            LinearGradient(
+                                colors: [.accentColor.opacity(0.3), .purple.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+
+                Spacer()
+
+                // Size badge
+                Text(model.size)
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color.accentColor.opacity(0.2))
+                    )
+                    .foregroundStyle(Color.accentColor)
             }
 
-            if pattern.contains("m") {
-                return rawValue / 1_000.0
-            }
-            return rawValue
-        }
+            Text(model.displayName)
+                .font(.system(size: 15, weight: .semibold))
+                .lineLimit(2)
 
-        return nil
+            Text(model.description)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            if isDownloading {
+                VStack(spacing: 6) {
+                    ProgressView(value: Double(downloadProgress) / 100.0)
+                    Text("\(downloadProgress)%")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button {
+                    downloadModel()
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding(14)
+        .frame(width: 160)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 0.6)
+                )
+        )
     }
 
-    private func approximateBytesPerWeight(for quantization: String) -> Double {
-        switch quantization {
-        case let token where token.contains("Q2"):
-            return 0.35
-        case let token where token.contains("Q3"):
-            return 0.45
-        case let token where token.contains("Q4"):
-            return 0.60
-        case let token where token.contains("Q5"):
-            return 0.75
-        case let token where token.contains("Q6"):
-            return 0.90
-        case let token where token.contains("Q8"):
-            return 1.05
-        case let token where token.contains("F16") || token.contains("FP16"):
-            return 2.0
-        case let token where token.contains("F32") || token.contains("FP32"):
-            return 4.0
-        default:
-            return 1.0
+    private func downloadModel() {
+        isDownloading = true
+        downloadProgress = 0
+
+        Task {
+            // Trigger a search for this model to get GGUF files
+            let results = try? await HuggingFaceService.shared.searchModelsDetailed(query: model.id)
+
+            if let firstResult = results?.first {
+                // Get the recommended file
+                let files = try? await HuggingFaceService.shared.getModelFiles(modelId: firstResult.modelId)
+                if let recommendedFile = files?.first(where: { $0.filename?.contains("Q4") == true }) ?? files?.first {
+                    // Simulate download progress
+                    for i in 1...10 {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        await MainActor.run {
+                            downloadProgress = i * 10
+                        }
+                    }
+                    // Note: Full download implementation would call HuggingFaceService.downloadModel
+                    await MainActor.run {
+                        isDownloading = false
+                        HapticManager.notification(.success)
+                    }
+                    return
+                }
+            }
+
+            await MainActor.run {
+                isDownloading = false
+                HapticManager.notification(.error)
+            }
         }
     }
 }

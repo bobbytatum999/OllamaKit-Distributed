@@ -273,6 +273,7 @@ extension RuntimePreferences {
             gpuLayers: settings.gpuLayers,
             threads: settings.threads,
             batchSize: settings.batchSize,
+            kvCachePreset: settings.kvCachePreset,
             flashAttentionEnabled: settings.flashAttentionEnabled,
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,
@@ -331,11 +332,40 @@ final class ModelStorage: ObservableObject {
     }
 
     func refresh() async {
+        await MainActor.run {
+            AppLogStore.shared.record(
+                .modelsCatalog,
+                level: .info,
+                title: "Catalog Refresh Started",
+                message: "Refreshing model catalog"
+            )
+        }
+
         do {
             let entries = try await RuntimeCoordinator.shared.availableEntries(contextLength: AppSettings.shared.defaultContextLength)
+            let installedModels = entries.filter { !$0.isBuiltInAppleModel }
+            let totalSize = installedModels.reduce(0) { $0 + $1.capabilitySummary.sizeBytes }
             snapshots = entries.map(ModelSnapshot.init(entry:))
+
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .info,
+                    title: "Catalog Refresh Completed",
+                    message: "Found \(installedModels.count) models",
+                    metadata: ["total_models": "\(installedModels.count)", "total_size": "\(totalSize)"]
+                )
+            }
         } catch {
-            print("Failed to refresh model registry: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to refresh model registry",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
     }
 
@@ -353,8 +383,31 @@ final class ModelStorage: ObservableObject {
             )
             _ = await validateModel(catalogId: entry.catalogId)
             await refresh()
+
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .info,
+                    title: "Model Added to Catalog",
+                    message: "Added: \(seed.name)",
+                    metadata: [
+                        "catalog_id": entry.catalogId,
+                        "source": "download",
+                        "quantization": seed.quantization,
+                        "size_bytes": "\(seed.size)"
+                    ]
+                )
+            }
         } catch {
-            print("Failed to upsert downloaded model into registry: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to upsert downloaded model into registry",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
     }
 
@@ -394,15 +447,43 @@ final class ModelStorage: ObservableObject {
                 AppSettings.shared.defaultModelId = ""
             }
             await refresh()
+
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .warning,
+                    title: "Model Removed from Catalog",
+                    message: "Removed model: \(catalogId)",
+                    metadata: ["catalog_id": catalogId]
+                )
+            }
             return true
         } catch {
-            print("Failed to delete model from registry: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to delete model from registry",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                )
+            }
             return false
         }
     }
 
     @discardableResult
     func validateModel(catalogId: String) async -> ModelSnapshot? {
+        await MainActor.run {
+            AppLogStore.shared.record(
+                .modelsCatalog,
+                level: .debug,
+                title: "Model Validation Started",
+                message: "Validating model: \(catalogId)",
+                metadata: ["catalog_id": catalogId]
+            )
+        }
+
         do {
             guard let entry = try await RuntimeCoordinator.shared.resolveModelReference(
                 catalogId,
@@ -424,9 +505,29 @@ final class ModelStorage: ObservableObject {
                 outcome: outcome
             )
             await refresh()
-            return snapshot(name: entry.catalogId)
+            let resultSnapshot = snapshot(name: entry.catalogId)
+            let summary = resultSnapshot?.validationSummary
+
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .info,
+                    title: "Model Validation Completed",
+                    message: "Validation completed for: \(catalogId)",
+                    metadata: ["catalog_id": catalogId, "status": "\(outcome.status)", "summary": summary ?? "none"]
+                )
+            }
+            return resultSnapshot
         } catch {
-            print("Failed to validate model \(catalogId): \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to validate model",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                )
+            }
             return nil
         }
     }
@@ -446,7 +547,15 @@ final class ModelStorage: ObservableObject {
 
             await refresh()
         } catch {
-            print("Failed to delete installed models: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to delete installed models",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
     }
 
@@ -480,7 +589,15 @@ final class ModelStorage: ObservableObject {
             _ = try await ModelRegistryStore.shared.migrateLegacyModels(seeds)
             UserDefaults.standard.set(true, forKey: Self.migrationDefaultsKey)
         } catch {
-            print("Failed to migrate legacy model records: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to migrate legacy model records",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
     }
 

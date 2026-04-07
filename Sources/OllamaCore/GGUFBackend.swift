@@ -36,6 +36,7 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             gpuLayers: runtime.gpuLayers,
             threads: runtime.threads,
             batchSize: runtime.batchSize,
+            kvCachePreset: runtime.kvCachePreset,
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
             mlockEnabled: runtime.mlockEnabled,
@@ -81,6 +82,7 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             gpuLayers: runtime.gpuLayers,
             threads: runtime.threads,
             batchSize: runtime.batchSize,
+            kvCachePreset: runtime.kvCachePreset,
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
             mlockEnabled: runtime.mlockEnabled,
@@ -262,6 +264,7 @@ private struct BackendConfiguration: Equatable {
     let gpuLayers: Int
     let threads: Int
     let batchSize: Int
+    let kvCachePreset: RuntimePreferences.KVCachePreset
     let flashAttentionEnabled: Bool
     let mmapEnabled: Bool
     let mlockEnabled: Bool
@@ -323,6 +326,7 @@ private final class BackendEngine {
         contextParams.n_threads_batch = Int32(configuration.threads)
         contextParams.flash_attn_type = configuration.flashAttentionEnabled ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED
         contextParams.no_perf = false
+        Self.applyKVCachePreset(configuration.kvCachePreset, to: &contextParams)
 
         #if targetEnvironment(simulator)
         contextParams.offload_kqv = false
@@ -359,6 +363,21 @@ private final class BackendEngine {
 
     func matches(_ configuration: BackendConfiguration) -> Bool {
         self.configuration == configuration
+    }
+
+    private static func applyKVCachePreset(_ preset: RuntimePreferences.KVCachePreset, to params: inout llama_context_params) {
+        switch preset {
+        case .platformDefault:
+            break
+        case .q8_0:
+            params.type_k = GGML_TYPE_Q8_0
+            params.type_v = GGML_TYPE_Q8_0
+        case .googleTurboQ4:
+            // TurboQuant-style setting used by community forks (e.g. `-ctk turbo4 -ctv turbo4`)
+            // is approximated here by forcing Q4_0 KV cache types on stock llama.cpp.
+            params.type_k = GGML_TYPE_Q4_0
+            params.type_v = GGML_TYPE_Q4_0
+        }
     }
 
     func generate(

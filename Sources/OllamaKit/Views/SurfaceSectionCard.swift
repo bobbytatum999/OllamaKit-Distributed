@@ -2,15 +2,18 @@ import SwiftUI
 
 struct SurfaceSectionCard<Content: View>: View {
     let title: String?
+    let icon: String?
     let footer: String?
     let content: Content
 
     init(
         title: String? = nil,
+        icon: String? = nil,
         footer: String? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
+        self.icon = icon
         self.footer = footer
         self.content = content()
     }
@@ -18,11 +21,19 @@ struct SurfaceSectionCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let title {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .padding(.horizontal, 4)
+                HStack(spacing: 8) {
+                    if let icon {
+                        Image(systemName: icon)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                }
+                .padding(.horizontal, 4)
             }
 
             VStack(spacing: 0) {
@@ -36,6 +47,13 @@ struct SurfaceSectionCard<Content: View>: View {
                         RoundedRectangle(cornerRadius: 20)
                             .stroke(.white.opacity(0.1), lineWidth: 0.5)
                     )
+                    .overlay(alignment: .topLeading) {
+                        Circle()
+                            .fill(.white.opacity(0.09))
+                            .frame(width: 90, height: 90)
+                            .blur(radius: 20)
+                            .offset(x: -25, y: -35)
+                    }
             )
 
             if let footer {

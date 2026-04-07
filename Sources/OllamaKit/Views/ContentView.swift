@@ -34,6 +34,15 @@ struct ContentView: View {
             }
             .tag(2)
 
+            // Automations Tab
+            NavigationStack {
+                AutomationsView()
+            }
+            .tabItem {
+                Label("Automate", systemImage: "wand.and.stars")
+            }
+            .tag(3)
+
             // Settings Tab
             NavigationStack {
                 SettingsView()
@@ -41,34 +50,10 @@ struct ContentView: View {
             .tabItem {
                 Label("Settings", systemImage: "gear")
             }
-            .tag(3)
+            .tag(4)
         }
         .tint(.accentColor)
         .preferredColorScheme(settings.darkMode ? .dark : .light)
-        .onAppear {
-            AppLogStore.shared.record(
-                .navigation,
-                title: "App Opened",
-                message: "Main tab container appeared."
-            )
-        }
-        .onChange(of: selectedTab) { _, newTab in
-            let tabName: String
-            switch newTab {
-            case 0: tabName = "Chat"
-            case 1: tabName = "Models"
-            case 2: tabName = "Server"
-            case 3: tabName = "Settings"
-            default: tabName = "Unknown"
-            }
-
-            AppLogStore.shared.record(
-                .navigation,
-                title: "Tab Selected",
-                message: "User switched to \(tabName).",
-                metadata: ["tab_index": String(newTab)]
-            )
-        }
     }
 }
 

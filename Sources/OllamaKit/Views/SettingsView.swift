@@ -16,8 +16,11 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(spacing: 20) {
+                    SettingsHeroHeader()
+
                     SurfaceSectionCard(
                         title: "Model Parameters",
+                        icon: "slider.horizontal.3",
                         footer: "Default parameters for model inference. These can be overridden per chat."
                     ) {
                         ModelSettingsSection(settings: settings)
@@ -25,49 +28,38 @@ struct SettingsView: View {
 
                     SurfaceSectionCard(
                         title: "Performance",
+                        icon: "speedometer",
                         footer: "Adjust based on your device's capabilities. More GPU layers means faster inference but higher memory usage."
                     ) {
                         PerformanceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Memory Management") {
+                    SurfaceSectionCard(title: "Memory Management", icon: "memorychip") {
                         MemorySettingsSection(settings: settings)
                     }
 
                     SurfaceSectionCard(
                         title: "Hugging Face",
+                        icon: "person.crop.circle.badge.checkmark",
                         footer: "Required for accessing gated models and higher rate limits."
                     ) {
                         HuggingFaceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Interface") {
+                    SurfaceSectionCard(title: "Interface", icon: "paintpalette") {
                         InterfaceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(
-                        title: "App Debug Logs",
-                        footer: "Client-side app events only (tab switches, chat send/receive, runtime errors). Server/API logs remain in the Server tab."
-                    ) {
-                        AppDebugLogsSection()
-                    }
-
-                    SurfaceSectionCard(
-                        title: "Model Performance",
-                        footer: "Recent model load/generation timing samples to help debug slow responses."
-                    ) {
-                        ModelPerformanceSection()
-                    }
-
-                    SurfaceSectionCard(
-                        title: "Benchmark",
-                        footer: "Run a quick benchmark using the smallest runnable model on this device."
-                    ) {
-                        BenchmarkSection()
-                    }
-
-                    SurfaceSectionCard(title: "Data Management") {
+                    SurfaceSectionCard(title: "Data Management", icon: "externaldrive") {
                         DataManagementSection()
+                    }
+
+                    SurfaceSectionCard(
+                        title: "App Activity Logs",
+                        icon: "list.bullet.rectangle.portrait",
+                        footer: "Includes chat and model runtime events. Server/API logs remain in the Server panel."
+                    ) {
+                        AppActivityLogsSection()
                     }
 
                     SurfaceSectionCard {
@@ -109,6 +101,47 @@ struct SettingsView: View {
         } message: {
             Text("This will reset all settings to their default values. Your downloaded models and chats will not be affected.")
         }
+    }
+}
+
+private struct SettingsHeroHeader: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [.blue.opacity(0.85), .purple.opacity(0.85)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 54, height: 54)
+
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Advanced Controls")
+                    .font(.system(size: 19, weight: .bold))
+                Text("Tune model quality, speed, memory, and runtime behavior.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                )
+        )
     }
 }
 
@@ -217,9 +250,30 @@ struct PerformanceSettingsSection: View {
                 title: "GPU Layers",
                 value: $settings.gpuLayers,
                 range: 0...100,
-                description: "Layers to offload to GPU"
+                description: "Layers to offload to GPU (100 = fastest on most devices)"
             )
             
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("KV Cache Quant")
+                    .font(.system(size: 16, weight: .medium))
+                Text("Default is safest. Google Turbo (Q4_0) is a community preset and may vary by model.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+
+                Picker("KV Cache Quant", selection: Binding(
+                    get: { settings.kvCachePreset },
+                    set: { settings.kvCachePreset = $0 }
+                )) {
+                    ForEach(RuntimePreferences.KVCachePreset.allCases, id: \.rawValue) { preset in
+                        Text(preset.title).tag(preset)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding(.vertical, 12)
+
             Divider()
             
             // Flash Attention
@@ -233,103 +287,6 @@ struct PerformanceSettingsSection: View {
                 }
             }
             .padding(.vertical, 12)
-            
-            Divider()
-
-            TurboQuantModePickerRow(selection: $settings.turboQuantMode)
-
-            Divider()
-
-            KVCachePickerRow(
-                title: "KV Cache Type (K)",
-                description: "Key-cache precision for experimental TurboQuant-style tuning",
-                selection: $settings.kvCacheTypeK
-            )
-            .disabled(settings.turboQuantMode != .disabled)
-
-            Divider()
-
-            KVCachePickerRow(
-                title: "KV Cache Type (V)",
-                description: "Value-cache precision for experimental TurboQuant-style tuning",
-                selection: $settings.kvCacheTypeV
-            )
-            .disabled(settings.turboQuantMode != .disabled)
-
-        }
-    }
-}
-
-private struct TurboQuantModePickerRow: View {
-    @Binding var selection: RuntimePreferences.TurboQuantMode
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("TurboQuant Mode")
-                .font(.system(size: 16, weight: .medium))
-            Text("Google TurboQuant-inspired KV presets. Balanced/Aggressive override manual K/V selectors.")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-
-            Picker("TurboQuant Mode", selection: $selection) {
-                ForEach(RuntimePreferences.TurboQuantMode.allCases, id: \.self) { mode in
-                    Text(label(for: mode)).tag(mode)
-                }
-            }
-            .pickerStyle(.menu)
-        }
-        .padding(.vertical, 12)
-    }
-
-    private func label(for mode: RuntimePreferences.TurboQuantMode) -> String {
-        switch mode {
-        case .disabled:
-            return "Disabled (Manual)"
-        case .googleTurboQuantBalanced:
-            return "Google TurboQuant Balanced"
-        case .googleTurboQuantAggressive:
-            return "Google TurboQuant Aggressive"
-        }
-    }
-}
-
-private struct KVCachePickerRow: View {
-    let title: String
-    let description: String
-    @Binding var selection: RuntimePreferences.KVCacheQuantization
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 16, weight: .medium))
-            Text(description)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-
-            Picker(title, selection: $selection) {
-                ForEach(RuntimePreferences.KVCacheQuantization.allCases, id: \.self) { option in
-                    Text(label(for: option)).tag(option)
-                }
-            }
-            .pickerStyle(.menu)
-        }
-        .padding(.vertical, 12)
-    }
-
-    private func label(for option: RuntimePreferences.KVCacheQuantization) -> String {
-        switch option {
-        case .float16:
-            return "F16"
-        case .float32:
-            return "F32"
-        case .q8_0:
-            return "Q8_0"
-        case .q6_K:
-            return "Q6_K"
-        case .q5_0:
-            return "Q5_0"
-        case .q4_0:
-            return "Q4_0"
         }
     }
 }
@@ -695,230 +652,211 @@ struct DataManagementSection: View {
     }
 }
 
-struct AppDebugLogsSection: View {
+struct AppActivityLogsSection: View {
     @ObservedObject private var logStore = AppLogStore.shared
+    @State private var liveUpdates = true
+    @State private var displayedEntries: [AppLogEntry] = []
+    @State private var searchText = ""
+    @State private var selectedCategory: AppLogCategory?
 
-    private var recentEntries: [AppLogEntry] {
-        Array(logStore.entries.suffix(60).reversed())
+    private var filteredEntries: [AppLogEntry] {
+        displayedEntries.filter { entry in
+            let matchesCategory = selectedCategory.map { entry.category == $0 } ?? true
+            let needle = searchText.trimmedForLookup.lowercased()
+            guard !needle.isEmpty else { return matchesCategory }
+
+            let haystack = [
+                entry.title,
+                entry.message,
+                entry.body ?? "",
+                entry.category.rawValue,
+                entry.level.rawValue
+            ].joined(separator: " ").lowercased()
+            return matchesCategory && haystack.contains(needle)
+        }
+    }
+
+    private var exportedLogText: String {
+        filteredEntries.map(renderEntry).joined(separator: "\n\n")
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Recent Events")
-                        .font(.system(size: 16, weight: .medium))
-                    Text(logStore.persistenceSummary)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                TextField("Search app logs", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(.ultraThinMaterial)
+                    )
+
+                Menu {
+                    Button("All Categories") { selectedCategory = nil }
+                    ForEach(AppLogCategory.allCases) { category in
+                        Button(category.rawValue.replacingOccurrences(of: "_", with: " ").capitalized) {
+                            selectedCategory = category
+                        }
+                    }
+                } label: {
+                    Label(selectedCategoryLabel, systemImage: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(.ultraThinMaterial)
+                        )
                 }
+            }
+
+            HStack(spacing: 12) {
+                Toggle("Live", isOn: $liveUpdates)
+                    .font(.system(size: 13, weight: .medium))
+
                 Spacer()
+
+                Button("Copy") {
+                    UIPasteboard.general.string = exportedLogText
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .disabled(filteredEntries.isEmpty)
+
+                ShareLink(
+                    item: exportedLogText,
+                    subject: Text("OllamaKit App Logs"),
+                    message: Text("Exported app/model/chat logs from OllamaKit.")
+                ) {
+                    Text("Export")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .disabled(filteredEntries.isEmpty)
+
                 Button("Clear") {
                     logStore.clear()
-                    HapticManager.impact(.light)
+                    displayedEntries = []
                 }
-                .font(.system(size: 13, weight: .semibold))
-                .buttonStyle(.bordered)
-            }
-            .padding(.vertical, 12)
-
-            if recentEntries.isEmpty {
-                Divider()
-                Text("No app debug logs yet.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Divider()
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(recentEntries) { entry in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("[\(entry.category.rawValue)] \(entry.title)")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text(entry.message)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
-                                Text(entry.timestamp.formatted(date: .omitted, time: .standard))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 220)
-            }
-        }
-    }
-}
-
-struct ModelPerformanceSection: View {
-    @ObservedObject private var performanceStore = ModelPerformanceStore.shared
-
-    private var entries: [ModelPerformanceSample] {
-        Array(performanceStore.entries.suffix(40).reversed())
-    }
-
-    private var averageTokensPerSecond: Double {
-        let samples = entries.filter { $0.phase == .generate && $0.tokensPerSecond > 0 && $0.wasSuccessful }
-        guard !samples.isEmpty else { return 0 }
-        return samples.reduce(0) { $0 + $1.tokensPerSecond } / Double(samples.count)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Recent Speed Samples")
-                        .font(.system(size: 16, weight: .medium))
-                    Text(averageTokensPerSecond > 0 ? String(format: "Avg generate speed: %.1f tok/s", averageTokensPerSecond) : "No completed generation samples yet.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Clear") {
-                    performanceStore.clear()
-                    HapticManager.impact(.light)
-                }
-                .font(.system(size: 13, weight: .semibold))
-                .buttonStyle(.bordered)
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(entries) { entry in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("[\(entry.phase.rawValue)] \(entry.modelID)")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(
-                                entry.phase == .generate
-                                ? String(format: "%.1f ms • %d tokens • %.1f tok/s%@", entry.elapsedMs, entry.tokens, entry.tokensPerSecond, entry.wasSuccessful ? "" : " • failed")
-                                : String(format: "%.1f ms%@", entry.elapsedMs, entry.wasSuccessful ? "" : " • failed")
-                            )
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            if let notes = entry.notes, !notes.isEmpty {
-                                Text(notes)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 220)
-        }
-    }
-}
-
-struct BenchmarkSection: View {
-    @State private var runToken = 0
-    @State private var isRunning = false
-    @State private var status = "Idle"
-    @State private var resultLine = ""
-    @State private var errorLine = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Quick Benchmark")
-                    .font(.system(size: 16, weight: .medium))
-                Spacer()
-                Button(isRunning ? "Running…" : "Run") {
-                    guard !isRunning else { return }
-                    runToken += 1
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isRunning)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.red)
             }
 
-            Text(status)
-                .font(.system(size: 13))
+            Text(logStore.persistenceSummary)
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
 
-            if !resultLine.isEmpty {
-                Text(resultLine)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(spacing: 10) {
+                    if filteredEntries.isEmpty {
+                        Text("No app activity log entries yet.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 12)
+                    } else {
+                        ForEach(filteredEntries.suffix(100)) { entry in
+                            AppLogEntryRow(entry: entry)
+                        }
+                    }
+                }
             }
-
-            if !errorLine.isEmpty {
-                Text(errorLine)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.red)
+            .frame(minHeight: 240, maxHeight: 360)
+        }
+        .onAppear {
+            displayedEntries = logStore.entries
+        }
+        .onChange(of: logStore.entries) { _, newValue in
+            if liveUpdates {
+                displayedEntries = newValue
             }
         }
-        .padding(.vertical, 12)
-        .task(id: runToken) {
-            guard runToken > 0 else { return }
-            await runBenchmark()
+        .onChange(of: liveUpdates) { _, newValue in
+            if newValue {
+                displayedEntries = logStore.entries
+            }
         }
     }
 
-    @MainActor
-    private func runBenchmark() async {
-        isRunning = true
-        status = "Refreshing models…"
-        resultLine = ""
-        errorLine = ""
-        defer { isRunning = false }
+    private var selectedCategoryLabel: String {
+        guard let selectedCategory else { return "Category" }
+        return selectedCategory.rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+    }
 
-        await ModelStorage.shared.refresh()
-        let candidates = ModelStorage.shared.selectionSnapshots
-            .filter { $0.canBeSelectedForChat && $0.isValidatedRunnable }
-            .sorted { $0.size < $1.size }
+    private func renderEntry(_ entry: AppLogEntry) -> String {
+        let timestamp = ISO8601DateFormatter().string(from: entry.timestamp)
+        let metadata = entry.metadata
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: " ")
+        let metadataPart = metadata.isEmpty ? "" : "\n\(metadata)"
+        let bodyPart = entry.body.map { "\n\($0)" } ?? ""
+        return "[\(timestamp)] [\(entry.level.rawValue.uppercased())] [\(entry.category.rawValue)] \(entry.title)\n\(entry.message)\(metadataPart)\(bodyPart)"
+    }
+}
 
-        guard let model = candidates.first else {
-            status = "No runnable model available."
-            return
+struct AppLogEntryRow: View {
+    let entry: AppLogEntry
+
+    private var tint: Color {
+        switch entry.level {
+        case .debug:
+            return .secondary
+        case .info:
+            return .blue
+        case .warning:
+            return .orange
+        case .error:
+            return .red
         }
+    }
 
-        do {
-            status = "Loading \(model.displayName)…"
-            let contextLength = max(min(model.runtimeContextLength, AppSettings.shared.defaultContextLength), 512)
-            let loadStart = CFAbsoluteTimeGetCurrent()
-            try await ModelRunner.shared.loadModel(
-                catalogId: model.catalogId,
-                contextLength: contextLength,
-                gpuLayers: AppSettings.shared.gpuLayers
-            )
-            let loadMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.title)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(entry.timestamp, style: .time)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
 
-            status = "Generating sample output…"
-            let result = try await ModelRunner.shared.generate(
-                prompt: "Return a short benchmark response.",
-                parameters: SamplingParameters(
-                    temperature: 0.2,
-                    topP: 0.9,
-                    topK: 40,
-                    repeatPenalty: 1.05,
-                    repeatLastN: 64,
-                    maxTokens: 96
-                )
-            ) { _ in }
+                Spacer()
 
-            let tokPerSec = result.generationTime > 0
-                ? Double(result.tokensGenerated) / result.generationTime
-                : 0
-            status = "Benchmark complete."
-            resultLine = String(
-                format: "%@ • load %.0f ms • %d tokens • %.1f tok/s",
-                model.displayName,
-                loadMs,
-                result.tokensGenerated,
-                tokPerSec
-            )
-        } catch {
-            status = "Benchmark failed."
-            errorLine = error.localizedDescription
+                Text(entry.category.rawValue)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(tint)
+            }
+
+            Text(entry.message)
+                .font(.system(size: 12))
+
+            if !entry.metadata.isEmpty {
+                Text(entry.metadata
+                    .sorted { $0.key < $1.key }
+                    .map { "\($0.key)=\($0.value)" }
+                    .joined(separator: " "))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+            }
+
+            if let body = entry.body {
+                Text(body)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(6)
+            }
         }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.ultraThinMaterial)
+        )
     }
 }
 
