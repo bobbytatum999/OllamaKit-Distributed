@@ -155,6 +155,17 @@ struct OnboardingView: View {
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .padding(.bottom, 20)
+                } else {
+                    Button("Get Started") {
+                        hasCompletedOnboarding = true
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 14)
+                    .background(Color(hex: "8B5CF6"))
+                    .clipShape(Capsule())
+                    .padding(.bottom, 40)
                 }
             }
         }
