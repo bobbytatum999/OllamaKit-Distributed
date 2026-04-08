@@ -227,17 +227,6 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Keep server running in background
         BackgroundTaskManager.shared.scheduleBackgroundTask()
     }
-
-    // MARK: - Background URL Session Handling
-
-    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
-        // Store the completion handler so DownloadSessionDelegate can call it
-        // when all background events have been delivered.
-        // If this isn't called, iOS may kill the app while background tasks are pending.
-        if identifier == "com.ollamakit.huggingface.download" {
-            DownloadSessionDelegate.shared.storeBackgroundCompletionHandler(completionHandler)
-        }
-    }
 }
 
 struct OnboardingView: View {

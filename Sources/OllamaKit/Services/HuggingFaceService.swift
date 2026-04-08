@@ -4,30 +4,25 @@ import OllamaCore
 final class HuggingFaceService: @unchecked Sendable {
     static let shared = HuggingFaceService()
 
+    // Stores the URLSessionDownloadTask and its KVO observation for cancellation.
+    // The original working pattern uses URLSession.shared + downloadTask completion handler
+    // + KVO progress — NOT a background URLSession delegate. This is the correct approach
+    // for foreground downloads: reliable, cancellable, and progress-reporting.
     private struct ActiveDownload: Sendable {
         let token: UUID
-        let id: String
-        let createdAt: Date
+        let task: URLSessionDownloadTask
+        let observation: NSKeyValueObservation
     }
 
     private let baseURLString = "https://huggingface.co/api"
     private let downloadBaseURLString = "https://huggingface.co"
 
-    // Background session for large file downloads — avoids main-thread blocking
-    private lazy var backgroundSession: URLSession = {
-        let config = URLSessionConfiguration.background(
-            withIdentifier: "com.ollamakit.huggingface.download"
-        )
-        config.isDiscretionary = false
-        config.sessionSendsLaunchEvents = true
-        config.allowsCellularAccess = true
-        config.timeoutIntervalForResource = 60 * 60 * 4   // 4 hour max for multi-GB files
-        config.timeoutIntervalForRequest = 60               // 60s per request
-        config.httpMaximumConnectionsPerHost = 4
-        return URLSession(configuration: config, delegate: DownloadSessionDelegate.shared, delegateQueue: nil)
-    }()
+    // URLSession.shared is the shared system session — suitable for foreground downloads.
+    // This is the same pattern the original working code used. For background downloads
+    // when the app is suspended, a background URLSession would be needed, but that adds
+    // complexity and is not needed for normal in-app downloads.
+    private let session = URLSession.shared
 
-    // Fallback foreground session for quick API calls
     private lazy var foregroundSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
@@ -36,8 +31,6 @@ final class HuggingFaceService: @unchecked Sendable {
     }()
 
     private let decoder: JSONDecoder
-
-    // Thread-safe tracking of active downloads
     private let activeDownloadsLock = NSLock()
     private var activeDownloads: [String: ActiveDownload] = [:]
 
@@ -109,7 +102,7 @@ final class HuggingFaceService: @unchecked Sendable {
         let results = try await searchModels(query: query, limit: limit)
         let detailedResults = try await hydrate(models: results)
 
-        await log(.huggingFace, level: .info, title: "HF Detailed Search Completed", message: "Found \(detailedResults.count) detailed models for: \(query)", metadata: ["query": query, "result_count": "\(detailedResults.count)"])
+        await log(.huggingFace, level: .info, title: "HF Detailed Search Completed", message: "Found \(detailedResults.count) models for: \(query)", metadata: ["query": query, "result_count": "\(detailedResults.count)"])
 
         return detailedResults
     }
@@ -191,6 +184,9 @@ final class HuggingFaceService: @unchecked Sendable {
 
     // MARK: - Download
 
+    /// Downloads a GGUF file using URLSession.shared — the same working pattern as
+    /// the original code. Uses a completion handler closure + KVO progress observation.
+    /// This is reliable for foreground downloads. Cancellable via cancelDownload().
     func downloadModel(
         from url: URL,
         filename: String,
@@ -209,42 +205,38 @@ final class HuggingFaceService: @unchecked Sendable {
         try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
 
         let destinationURL = destinationDirectory.appendingPathComponent(filename)
-        let stagingID = UUID().uuidString
-        let stagedURL = destinationDirectory.appendingPathComponent("\(filename).download-\(stagingID)")
+        let stagedURL = destinationDirectory.appendingPathComponent("\(filename).download-\(UUID().uuidString)")
 
+        // Initial zero progress
         progressHandler(DownloadProgress(totalBytes: 0, downloadedBytes: 0, progress: 0, speed: 0))
 
         do {
-            let downloadId = url.absoluteString
-
-            // Register this download so cancel can find it
-            let downloadToken = UUID()
-            let createdAt = Date()
-            activeDownloadsLock.withLock {
-                activeDownloads[downloadId] = ActiveDownload(token: downloadToken, id: downloadId, createdAt: createdAt)
-            }
-
-            defer {
-                activeDownloadsLock.withLock {
-                    activeDownloads.removeValue(forKey: downloadId)
-                }
-            }
-
-            // Use background session for large file downloads
-            let (tempURL, response) = try await performBackgroundDownload(
+            let (tempURL, response) = try await download(
                 request: authorizedRequest(url: url),
-                downloadId: downloadId,
-                progressHandler: progressHandler
+                id: url.absoluteString,
+                progressHandler: { progress in
+                    // Forward progress to caller on the main thread via Task
+                    Task { @MainActor in
+                        AppLogStore.shared.record(
+                            .huggingFace,
+                            level: .debug,
+                            title: "HF Download Progress",
+                            message: "Downloading: \(modelId)",
+                            metadata: ["model_id": modelId, "bytes_written": "\(progress.downloadedBytes)", "total_bytes": "\(progress.totalBytes)"]
+                        )
+                    }
+                    progressHandler(progress)
+                }
             )
 
             try validate(response: response)
             try Task.checkCancellation()
 
-            // Move from temp to staging
+            // Clean up any previous staged file and move to staging
             try? FileManager.default.removeItem(at: stagedURL)
             try FileManager.default.moveItem(at: tempURL, to: stagedURL)
 
-            // Atomic swap: remove old + move staged → final
+            // Atomic swap: remove existing + move staged → final
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 try FileManager.default.removeItem(at: destinationURL)
             }
@@ -277,32 +269,12 @@ final class HuggingFaceService: @unchecked Sendable {
         await log(.huggingFace, level: .warning, title: "HF Download Cancelled", message: "Download cancelled: \(id)", metadata: ["model_id": id])
 
         activeDownloadsLock.withLock {
-            activeDownloads[id]?.token // keep for reference
+            if let active = activeDownloads[id] {
+                active.task.cancel()
+                active.observation.invalidate()
+                activeDownloads.removeValue(forKey: id)
+            }
         }
-
-        // Background session cancellation via delegate
-        DownloadSessionDelegate.shared.cancelDownload(id: id)
-    }
-
-    // MARK: - Model Info
-
-    func getModelInfo(modelId: String) async throws -> ModelInfo {
-        let url = try repoAPIURL(modelId: modelId)
-        let (data, response) = try await foregroundSession.data(for: authorizedRequest(url: url))
-        try validate(response: response)
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw URLError(.cannotParseResponse)
-        }
-
-        return ModelInfo(
-            id: json["id"] as? String ?? modelId,
-            description: json["description"] as? String,
-            tags: json["tags"] as? [String] ?? [],
-            downloads: json["downloads"] as? Int ?? 0,
-            likes: json["likes"] as? Int ?? 0,
-            author: json["author"] as? String
-        )
     }
 
     // MARK: - Pull Candidate Resolution
@@ -364,27 +336,104 @@ final class HuggingFaceService: @unchecked Sendable {
 
     // MARK: - Private Helpers
 
-    private func performBackgroundDownload(
+    /// The core download: URLSession.shared downloadTask with completion handler + KVO progress.
+    /// This is the original working pattern. Task is stored in activeDownloads for cancellation.
+    private func download(
         request: URLRequest,
-        downloadId: String,
-        progressHandler: @escaping @Sendable (DownloadProgress) -> Void
+        id: String,
+        progressHandler: @escaping (DownloadProgress) -> Void
     ) async throws -> (URL, URLResponse) {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, URLResponse), Error>) in
-            let delegate = DownloadSessionDelegate.shared
+            let downloadToken = UUID()
+            let startedAt = Date()
 
-            // Store continuation on the delegate — it will resume on didFinishDownloading
-            delegate.storeContinuation(continuation, for: downloadId)
-            delegate.storeProgressHandler(progressHandler, for: downloadId)
+            let task = session.downloadTask(with: request) { [weak self] temporaryURL, response, error in
+                guard let self = self else { return }
 
-            let task = backgroundSession.downloadTask(with: request)
-            task.taskDescription = downloadId
-            delegate.storeTask(task, for: downloadId)
-
-            activeDownloadsLock.withLock {
-                if let existing = activeDownloads[downloadId] {
-                    delegate.cancelDownload(id: downloadId) // cancel old
+                // Clean up: remove from activeDownloads and invalidate KVO
+                let completed = self.activeDownloadsLock.withLock { () -> ActiveDownload? in
+                    guard let activeDownload = self.activeDownloads[id], activeDownload.token == downloadToken else {
+                        return nil
+                    }
+                    return self.activeDownloads.removeValue(forKey: id)
                 }
-                activeDownloads[downloadId] = ActiveDownload(token: UUID(), id: downloadId, createdAt: Date())
+                completed?.observation.invalidate()
+
+                if let error {
+                    let nsError = error as NSError
+                    if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+                        // Cancellation: not an error, just don't resume
+                        return
+                    }
+                    Task { @MainActor in
+                        AppLogStore.shared.record(
+                            .huggingFace,
+                            level: .error,
+                            title: "HF Download Failed",
+                            message: "Download session failed: \(error.localizedDescription)",
+                            metadata: ["model_id": id, "error": error.localizedDescription]
+                        )
+                    }
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let temporaryURL = temporaryURL, let response = response else {
+                    Task { @MainActor in
+                        AppLogStore.shared.record(
+                            .huggingFace,
+                            level: .debug,
+                            title: "HF Download Session Ended",
+                            message: "Download session ended for: \(id)",
+                            metadata: ["model_id": id]
+                        )
+                    }
+                    continuation.resume(throwing: URLError(.badServerResponse))
+                    return
+                }
+
+                Task { @MainActor in
+                    AppLogStore.shared.record(
+                        .huggingFace,
+                        level: .debug,
+                        title: "HF Download Session Ended",
+                        message: "Download session completed for: \(id)",
+                        metadata: ["model_id": id]
+                    )
+                }
+                continuation.resume(returning: (temporaryURL, response))
+            }
+
+            // KVO progress observation — fires on a background queue
+            let observation = task.progress.observe(\.fractionCompleted, options: [.initial, .new]) { progress, _ in
+                let totalBytes = max(progress.totalUnitCount, Int64(0))
+                let downloadedBytes = max(progress.completedUnitCount, Int64(0))
+                let normalizedProgress: Double
+
+                if totalBytes > 0 {
+                    normalizedProgress = min(max(Double(downloadedBytes) / Double(totalBytes), 0), 1)
+                } else {
+                    normalizedProgress = min(max(progress.fractionCompleted, 0), 1)
+                }
+
+                let elapsed = max(Date().timeIntervalSince(startedAt), 0.001)
+                let speed = Double(downloadedBytes) / elapsed
+
+                progressHandler(DownloadProgress(
+                    totalBytes: totalBytes,
+                    downloadedBytes: downloadedBytes,
+                    progress: normalizedProgress,
+                    speed: speed
+                ))
+            }
+
+            // Register in activeDownloads (cancel any existing for same id) and start
+            activeDownloadsLock.withLock {
+                if let existing = activeDownloads[id] {
+                    existing.task.cancel()
+                    existing.observation.invalidate()
+                }
+                activeDownloads[id] = ActiveDownload(token: downloadToken, task: task, observation: observation)
             }
 
             task.resume()
@@ -579,7 +628,6 @@ final class HuggingFaceService: @unchecked Sendable {
         return CompatibilityReport(backendKind: .ggufLlama, level: .unavailable, title: "Too Large", message: "This GGUF file is above the likely working size for \(runtimeProfile.deviceLabel).")
     }
 
-    // Logging helper — safe to call from any thread
     private func log(_ category: AppLogCategory, level: AppLogLevel, title: String, message: String, metadata: [String: String] = [:]) async {
         await MainActor.run {
             AppLogStore.shared.record(category, level: level, title: title, message: message, metadata: metadata)
@@ -621,177 +669,4 @@ struct ModelInfo: Sendable {
     let downloads: Int
     let likes: Int
     let author: String?
-}
-
-// MARK: - Background Download Session Delegate
-
-/// Lives outside any actor so URLSession's delegate queue can call it safely.
-/// IMPORTANT: This delegate must be kept alive for background URL sessions to work.
-/// iOS calls this delegate even when the app has been terminated and relaunched
-/// in the background. The delegate must call the background completion handler
-/// (from AppDelegate.application(handleEventsForBackgroundURLSession:)) once all
-/// events have been delivered, or iOS may kill the app.
-final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    static let shared = DownloadSessionDelegate()
-
-    private let lock = NSLock()
-    private var continuations: [String: CheckedContinuation<(URL, URLResponse), Error>] = [:]
-    private var progressHandlers: [String: @Sendable (DownloadProgress) -> Void] = [:]
-    private var tasks: [String: URLSessionDownloadTask] = [:]
-    private var startTimes: [String: Date] = [:]
-    private var backgroundCompletionHandler: (() -> Void)?
-
-    func storeContinuation(_ cont: CheckedContinuation<(URL, URLResponse), Error>, for id: String) {
-        lock.lock()
-        continuations[id] = cont
-        if startTimes[id] == nil {
-            startTimes[id] = Date()
-        }
-        lock.unlock()
-    }
-
-    func storeProgressHandler(_ handler: @escaping @Sendable (DownloadProgress) -> Void, for id: String) {
-        lock.lock(); defer { lock.unlock() }
-        progressHandlers[id] = handler
-    }
-
-    func storeTask(_ task: URLSessionDownloadTask, for id: String) {
-        lock.lock(); defer { lock.unlock() }
-        tasks[id] = task
-    }
-
-    func cancelDownload(id: String) {
-        lock.lock()
-        let task = tasks[id]
-        lock.unlock()
-        task?.cancel()
-    }
-
-    func storeBackgroundCompletionHandler(_ handler: @escaping () -> Void) {
-        lock.lock()
-        backgroundCompletionHandler = handler
-        lock.unlock()
-
-        // If we already have events in flight, trigger them
-        lock.lock()
-        let hasActiveTasks = !tasks.isEmpty
-        lock.unlock()
-
-        if !hasActiveTasks {
-            // No pending tasks — can call handler immediately
-            DispatchQueue.main.async {
-                self.lock.lock()
-                let handler = self.backgroundCompletionHandler
-                self.backgroundCompletionHandler = nil
-                self.lock.unlock()
-                handler?()
-            }
-        }
-    }
-
-    // MARK: - URLSessionDownloadDelegate
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let taskId = downloadTask.taskDescription else { return }
-
-        lock.lock()
-        let continuation = continuations.removeValue(forKey: taskId)
-        progressHandlers.removeValue(forKey: taskId)
-        tasks.removeValue(forKey: taskId)
-        startTimes.removeValue(forKey: taskId)
-        lock.unlock()
-
-        if let cont = continuation {
-            // Return the temp file URL — caller moves it to final destination
-            cont.resume(returning: (location, downloadTask.response!))
-        }
-        // If no continuation (app was killed and restarted), the downloaded file
-        // is still at `location` — move it via session.getTasksWithCompletionHandler
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let taskId = task.taskDescription else { return }
-
-        // Only handle real errors, not cancellation (didFinishDownloading handles success)
-        guard let error = error else { return }
-
-        // Check if this is a cancellation
-        let nsError = error as NSError
-        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
-            lock.lock()
-            continuations.removeValue(forKey: taskId)
-            progressHandlers.removeValue(forKey: taskId)
-            tasks.removeValue(forKey: taskId)
-            startTimes.removeValue(forKey: taskId)
-            lock.unlock()
-            return
-        }
-
-        lock.lock()
-        let continuation = continuations.removeValue(forKey: taskId)
-        progressHandlers.removeValue(forKey: taskId)
-        tasks.removeValue(forKey: taskId)
-        startTimes.removeValue(forKey: taskId)
-        lock.unlock()
-
-        if let cont = continuation {
-            cont.resume(throwing: error)
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didWriteData bytesWritten: Int64,
-        totalBytesWritten: Int64,
-        totalBytesExpectedToWrite: Int64
-    ) {
-        guard let taskId = downloadTask.taskDescription else { return }
-
-        // totalBytesExpectedToWrite can be -1 if the server didn't send a Content-Length
-        // (especially for HuggingFace CDN on certain files)
-        let totalBytes = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : 0
-        let downloadedBytes = max(totalBytesWritten, 0)
-
-        let normalizedProgress: Double
-        if totalBytes > 0 {
-            normalizedProgress = min(max(Double(downloadedBytes) / Double(totalBytes), 0), 1)
-        } else {
-            // No Content-Length: fake initial progress so UI doesn't show 0%
-            normalizedProgress = min(Double(downloadedBytes) / (100 * 1024 * 1024), 0.99)
-        }
-
-        let elapsed = lock.withLock { startTimes[taskId].map { max(Date().timeIntervalSince($0), 0.001) } ?? 0.001 }
-        let speed = elapsed > 0 ? Double(downloadedBytes) / elapsed : 0
-
-        lock.lock()
-        let handler = progressHandlers[taskId]
-        lock.unlock()
-
-        // Dispatch progress off the URLSession delegate thread
-        DispatchQueue.global(qos: .userInitiated).async {
-            handler?(DownloadProgress(
-                totalBytes: totalBytes,
-                downloadedBytes: downloadedBytes,
-                progress: normalizedProgress,
-                speed: speed
-            ))
-        }
-    }
-
-    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        // Called when ALL background events (for ALL tasks) have been delivered.
-        // This is our signal to call the background completion handler so iOS
-        // knows we handled everything and can stop suspending the app.
-        lock.lock()
-        let handler = backgroundCompletionHandler
-        backgroundCompletionHandler = nil
-        lock.unlock()
-
-        if let handler = handler {
-            DispatchQueue.main.async {
-                handler()
-            }
-        }
-    }
 }
