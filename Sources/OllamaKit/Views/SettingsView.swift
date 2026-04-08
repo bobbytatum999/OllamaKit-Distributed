@@ -34,6 +34,14 @@ struct SettingsView: View {
                         PerformanceSettingsSection(settings: settings)
                     }
 
+                    SurfaceSectionCard(
+                        title: "Thermal Monitor",
+                        icon: "thermometer.high",
+                        footer: "Monitors device thermal state. Estimated temperatures are based on iOS thermal state categories — actual CPU temperature varies by device."
+                    ) {
+                        ThermalMonitorSection()
+                    }
+
                     SurfaceSectionCard(title: "Memory Management", icon: "memorychip") {
                         MemorySettingsSection(settings: settings)
                     }
@@ -1009,6 +1017,257 @@ struct ParameterStepper: View {
             }
         }
         .padding(.vertical, 12)
+    }
+}
+
+// MARK: - Thermal Monitor Section
+
+struct ThermalMonitorSection: View {
+    @StateObject private var thermal = ThermalMonitorService.shared
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // State row
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Thermal State")
+                        .font(.system(size: 16, weight: .medium))
+                    Text(thermal.statusLabel)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(severityColor)
+                }
+
+                Spacer()
+
+                ThermalStateBadge(state: thermal.thermalState)
+            }
+            .padding(.vertical, 12)
+
+            Divider()
+
+            // Temperature display — both C and F
+            HStack(spacing: 0) {
+                // Celsius
+                VStack(spacing: 4) {
+                    Text("°C")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text(formattedCelsius)
+                        .font(.system(size: 22, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                    Text("Celsius")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+
+                Divider()
+                    .padding(.vertical, 4)
+
+                // Fahrenheit
+                VStack(spacing: 4) {
+                    Text("°F")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text(formattedFahrenheit)
+                        .font(.system(size: 22, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                    Text("Fahrenheit")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+
+                Divider()
+                    .padding(.vertical, 4)
+
+                // Range indicator
+                VStack(spacing: 4) {
+                    Text("Est. Range")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text(rangeString)
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                    Text("Typical")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .padding(.vertical, 14)
+
+            Divider()
+
+            // Thermal state bar
+            ThermalStateBar(currentState: thermal.thermalState)
+                .padding(.vertical, 12)
+
+            Divider()
+
+            // Monitoring toggle
+            Toggle(isOn: $thermal.monitoringEnabled) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Continuous Monitoring")
+                        .font(.system(size: 16, weight: .medium))
+                    Text("Polls thermal state every 2 seconds")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 10)
+        }
+    }
+
+    // MARK: - Formatted values
+
+    private var formattedCelsius: String {
+        String(format: "%.1f°", thermal.temperatureCelsius)
+    }
+
+    private var formattedFahrenheit: String {
+        String(format: "%.1f°", thermal.temperatureFahrenheit)
+    }
+
+    private var rangeString: String {
+        let low = Int(thermal.temperatureRangeCelsius.lowerBound)
+        let high = Int(thermal.temperatureRangeCelsius.upperBound)
+        return "\(low)–\(high)°"
+    }
+
+    private var severityColor: Color {
+        switch thermal.thermalState {
+        case .nominal:  return .green
+        case .fair:     return .green
+        case .serious:   return .yellow
+        case .critical: return .red
+        @unknown default: return .gray
+        }
+    }
+}
+
+// MARK: - Thermal State Badge
+
+struct ThermalStateBadge: View {
+    let state: ProcessInfo.ThermalState
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: iconName)
+                .font(.system(size: 14, weight: .semibold))
+            Text(label)
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(backgroundColor.opacity(0.18))
+        )
+        .foregroundStyle(foregroundColor)
+    }
+
+    private var iconName: String {
+        switch state {
+        case .nominal:  return "checkmark.circle.fill"
+        case .fair:     return "thermometer.medium"
+        case .serious:   return "thermometer.high"
+        case .critical: return "exclamationmark.triangle.fill"
+        @unknown default: return "questionmark.circle"
+        }
+    }
+
+    private var label: String {
+        switch state {
+        case .nominal:  return "Normal"
+        case .fair:     return "Warm"
+        case .serious:   return "Hot"
+        case .critical: return "Critical"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch state {
+        case .nominal:  return .green
+        case .fair:     return .green
+        case .serious:   return .orange
+        case .critical: return .red
+        @unknown default: return .gray
+        }
+    }
+
+    private var foregroundColor: Color {
+        switch state {
+        case .nominal:  return .green
+        case .fair:     return .green
+        case .serious:   return .orange
+        case .critical: return .red
+        @unknown default: return .gray
+        }
+    }
+}
+
+// MARK: - Thermal State Bar
+
+struct ThermalStateBar: View {
+    let currentState: ProcessInfo.ThermalState
+
+    private let states: [ProcessInfo.ThermalState] = [.nominal, .fair, .serious, .critical]
+
+    var body: some View {
+        VStack(spacing: 6) {
+            // Segmented bar
+            GeometryReader { geometry in
+                HStack(spacing: 3) {
+                    ForEach(Array(states.enumerated()), id: \.offset) { index, state in
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(barColor(for: state))
+                            .frame(width: barWidth(for: state, totalWidth: geometry.size.width))
+                    }
+                }
+            }
+            .frame(height: 10)
+
+            // Labels
+            HStack {
+                Text("Cool")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("Hot")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func barWidth(for state: ProcessInfo.ThermalState, totalWidth: CGFloat) -> CGFloat {
+        let segmentGap: CGFloat = 3 * 3  // 3 gaps
+        let width = (totalWidth - segmentGap) / 4
+        return max(width, 40)
+    }
+
+    private func barColor(for state: ProcessInfo.ThermalState) -> Color {
+        let isActive = stateReaches(currentState, upTo: state)
+        let baseColor: Color = {
+            switch state {
+            case .nominal:  return .green
+            case .fair:     return .green
+            case .serious:   return .orange
+            case .critical: return .red
+            @unknown default: return .gray
+            }
+        }()
+        return isActive ? baseColor : baseColor.opacity(0.25)
+    }
+
+    /// Returns true if thermalState reaches (or exceeds) the target state.
+    private func stateReaches(_ current: ProcessInfo.ThermalState, upTo target: ProcessInfo.ThermalState) -> Bool {
+        let order: [ProcessInfo.ThermalState] = [.nominal, .fair, .serious, .critical]
+        let currentIdx = order.firstIndex(of: current) ?? 0
+        let targetIdx = order.firstIndex(of: target) ?? 0
+        return currentIdx >= targetIdx
     }
 }
 

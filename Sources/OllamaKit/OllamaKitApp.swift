@@ -7,7 +7,6 @@ import OllamaCore
 struct OllamaKitApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @State private var thermalState: ProcessInfo.ThermalState = .nominal
     @State private var showingShareBanner = false
     @State private var pendingShareContent: [String: Any]?
     @Environment(\.scenePhase) private var scenePhase
@@ -19,6 +18,8 @@ struct OllamaKitApp: App {
         container = Self.makeModelContainer()
         ModelStorage.shared.configure(container: container)
         LocalFilesScanner.shared.configure(container: container)
+        // Initialize thermal monitoring
+        _ = ThermalMonitorService.shared
     }
 
     var body: some Scene {
@@ -27,34 +28,6 @@ struct OllamaKitApp: App {
                 ContentView()
                     .environment(\.scenePhase, scenePhase)
                     .modelContainer(container)
-
-                if thermalState == .serious {
-                    VStack {
-                        HStack {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
-                            Text("Device is warm — inference may slow down").font(.caption).foregroundStyle(.yellow)
-                            Spacer()
-                        }
-                        .padding(12)
-                        .background(Color.black.opacity(0.9))
-                        Spacer()
-                    }
-                }
-                if thermalState == .critical {
-                    VStack {
-                        HStack {
-                            Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
-                            Text("Device too hot — inference paused").font(.caption).foregroundStyle(.red)
-                            Spacer()
-                        }
-                        .padding(12)
-                        .background(Color.black.opacity(0.9))
-                        Spacer()
-                    }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
-                thermalState = ProcessInfo.processInfo.thermalState
             }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
