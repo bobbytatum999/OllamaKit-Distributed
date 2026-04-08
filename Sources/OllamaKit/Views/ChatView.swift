@@ -447,7 +447,6 @@ struct ChatView: View {
             viewModel.currentModel = nil
         }
     }
-}
 
 // MARK: - Body Helper Computed Properties
 
