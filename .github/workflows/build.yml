@@ -35,7 +35,7 @@ env:
 jobs:
   build:
     name: Build (${{ matrix.runtime_flavor }})
-    runs-on: macos-15
+    runs-on: macos-26
     continue-on-error: ${{ matrix.runtime_flavor == 'no-runtimes' }}
     timeout-minutes: 120
 
@@ -51,11 +51,6 @@ jobs:
         shell: bash
 
     steps:
-      - name: Select Xcode 18+
-        uses: https://github.com/mxcl/setup-xcode@v1
-        with:
-          xcode-version: "18+"
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
