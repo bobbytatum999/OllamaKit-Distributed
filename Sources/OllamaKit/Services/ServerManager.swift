@@ -317,55 +317,55 @@ final class ServerManager {
         }
     }
 
-    func handleLegacyListModels(on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleLegacyListModels(on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleOpenAIListModels(on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleOpenAIListModels(on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleLegacyShow(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleLegacyShow(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleLegacyGenerate(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleLegacyGenerate(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleLegacyChat(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleLegacyChat(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleOpenAICompletion(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleOpenAICompletion(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleOpenAIChatCompletion(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleOpenAIChatCompletion(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleLegacyEmbeddings(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleLegacyEmbeddings(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleOpenAIEmbeddings(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleOpenAIEmbeddings(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleOpenAIResponses(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleOpenAIResponses(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handlePull(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handlePull(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleDelete(request: String, on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleDelete(request: String, on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 
-    func handleRunningModels(on connection: NWConnection, context: ServerRequestContext) {
+fileprivate func handleRunningModels(on connection: NWConnection, context: ServerRequestContext) {
         // Implementation
     }
 

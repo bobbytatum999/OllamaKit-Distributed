@@ -56,52 +56,14 @@ struct ChatView: View {
             
             VStack(spacing: 0) {
                 // Messages List
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            ForEach(session.orderedMessages, id: \.id) { message in
-                                MessageBubble(message: message, onBranch: message.role == .assistant ? { msg in branchFromHere(msg) } : nil)
-                                    .id(message.id)
-                            }
-                            
-                            if viewModel.isGenerating {
-                                HStack(spacing: 8) {
-                                    TypingIndicator()
-                                    if viewModel.tokensPerSecond > 0 {
-                                        Text(String(format: "%.1f tok/s", viewModel.tokensPerSecond))
-                                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Capsule().fill(.ultraThinMaterial))
-                                    }
-                                }
-                                .id("typing")
-                            }
-                            
-                            Color.clear
-                                .frame(height: 1)
-                                .id(bottomID)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 16)
-                    }
-                    .onChange(of: session.orderedMessages.count) {
-                        withAnimation {
-                            proxy.scrollTo(bottomID, anchor: .bottom)
-                        }
-                    }
-                    .onChange(of: viewModel.isGenerating) {
-                        withAnimation {
-                            proxy.scrollTo(bottomID, anchor: .bottom)
-                        }
-                    }
-                    .onChange(of: viewModel.streamRevision) {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(bottomID, anchor: .bottom)
-                        }
-                    }
-                }
+                MessagesListView(
+                    session: session,
+                    isGenerating: viewModel.isGenerating,
+                    tokensPerSecond: viewModel.tokensPerSecond,
+                    streamRevision: viewModel.streamRevision,
+                    onBranch: branchFromHere,
+                    bottomID: bottomID
+                )
                 
                 // Input Area
                 VStack(spacing: 0) {
@@ -427,7 +389,6 @@ struct ChatView: View {
     }
 
     @MainActor
-    @MainActor
     private func branchFromHere(_ message: ChatMessage) {
         // Mark the current message as a branch point
         message.branchPoint = true
@@ -486,7 +447,9 @@ struct ChatView: View {
         }
         
         // Navigate to the branch session
-        session = branchSession
+        Task { @MainActor in
+            session = branchSession
+        }
     }
 
     private func deleteChat() {
@@ -1401,4 +1364,61 @@ struct ModelComparisonSheet: View {
     let session = ChatSession(modelId: "test")
     ChatView(session: session)
         .modelContainer(for: [ChatSession.self, ChatMessage.self, DownloadedModel.self], inMemory: true)
+}
+
+// MARK: - Extracted Subviews
+
+private struct MessagesListView: View {
+    let session: ChatSession
+    let isGenerating: Bool
+    let tokensPerSecond: Double
+    let streamRevision: Int
+    let onBranch: (ChatMessage) -> Void
+    let bottomID: String
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    ForEach(session.orderedMessages, id: \.id) { message in
+                        MessageBubble(
+                            message: message,
+                            onBranch: message.role == .assistant ? { msg in onBranch(msg) } : nil
+                        )
+                        .id(message.id)
+                    }
+
+                    if isGenerating {
+                        HStack(spacing: 8) {
+                            TypingIndicator()
+                            if tokensPerSecond > 0 {
+                                Text(String(format: "%.1f tok/s", tokensPerSecond))
+                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(.ultraThinMaterial))
+                            }
+                        }
+                        .id("typing")
+                    }
+
+                    Color.clear.frame(height: 1).id(bottomID)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+            }
+            .onChange(of: session.orderedMessages.count) {
+                withAnimation { proxy.scrollTo(bottomID, anchor: .bottom) }
+            }
+            .onChange(of: isGenerating) {
+                withAnimation { proxy.scrollTo(bottomID, anchor: .bottom) }
+            }
+            .onChange(of: streamRevision) {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo(bottomID, anchor: .bottom)
+                }
+            }
+        }
+    }
 }
