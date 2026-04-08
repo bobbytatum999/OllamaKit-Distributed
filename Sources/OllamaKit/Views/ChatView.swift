@@ -33,6 +33,11 @@ struct ChatView: View {
     @State private var showingCompareSheet = false
     @State private var isRecording = false
     @State private var speechRecognizer: SFSpeechRecognizer? = SFSpeechRecognizer(locale: .current)
+    // FIX: Store recognition Task so it can be cancelled on view disappear.
+    // Previously no onDisappear cleanup existed, so the Task ran indefinitely.
+    @State private var recognitionTask: Task<Void, Never>?
+    private var speechRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var speechAudioEngine: AVAudioEngine?
     
     @Namespace private var scrollID
 
@@ -78,6 +83,19 @@ struct ChatView: View {
         .task {
             await modelStore.refresh()
             syncCurrentModelSelection()
+        }
+        .onDisappear {
+            // FIX: Cancel speech recognition Task when view disappears.
+            // Previously the Task ran indefinitely even after the view was removed.
+            if isRecording {
+                isRecording = false
+            }
+            recognitionTask?.cancel()
+            recognitionTask = nil
+            speechAudioEngine?.stop()
+            speechAudioEngine = nil
+            speechRequest?.endAudio()
+            speechRequest = nil
         }
         .onChange(of: downloadedModelRevision) { _, _ in
             syncCurrentModelSelection()
@@ -306,8 +324,10 @@ struct ChatView: View {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        speechRequest = request
 
         let audioEngine = AVAudioEngine()
+        speechAudioEngine = audioEngine
         let inputNode = audioEngine.inputNode
 
         isRecording = true
@@ -315,9 +335,12 @@ struct ChatView: View {
             HapticManager.impact(.light)
         }
 
-        Task {
+        // FIX: Store Task so it can be cancelled on view disappear.
+        // Previously no cleanup existed — Task ran indefinitely after view disappeared.
+        recognitionTask = Task {
             var lastTranscription = ""
             let stream = recognizer.recognitionTask(with: request) { [self] result, error in
+                if Task.isCancelled { return }
                 if let result = result {
                     let transcription = result.bestTranscription.formattedString
                     Task { @MainActor in
@@ -337,15 +360,17 @@ struct ChatView: View {
             audioEngine.prepare()
             try? audioEngine.start()
 
-            // Wait for isRecording to become false (user stopped)
-            while isRecording {
+            // Wait for isRecording to become false (user stopped or view disappeared)
+            while isRecording && !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
 
-            audioEngine.stop()
-            inputNode.removeTap(onBus: 0)
-            stream.cancel()
-            request.endAudio()
+            if !Task.isCancelled {
+                audioEngine.stop()
+                inputNode.removeTap(onBus: 0)
+                stream.cancel()
+                request.endAudio()
+            }
 
             Task { @MainActor in
                 HapticManager.impact(.medium)
