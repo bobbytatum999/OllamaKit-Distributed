@@ -1349,12 +1349,6 @@ struct ModelComparisonSheet: View {
     }
 }
 
-#Preview {
-    let session = ChatSession(modelId: "test")
-    ChatView(session: session)
-        .modelContainer(for: [ChatSession.self, ChatMessage.self, DownloadedModel.self], inMemory: true)
-}
-
 // MARK: - Extracted Subviews
 
 private struct MessagesListView: View {
