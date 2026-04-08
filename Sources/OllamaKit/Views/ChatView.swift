@@ -34,7 +34,9 @@ struct ChatView: View {
     @State private var isRecording = false
     @State private var speechRecognizer: SFSpeechRecognizer? = SFSpeechRecognizer(locale: .current)
     
-    @Namespace private var bottomID
+    @Namespace private var scrollID
+
+    private let bottomID = "bottom"
 
     private var trimmedMessageText: String {
         messageText.trimmingCharacters(in: .whitespacesAndNewlines)
