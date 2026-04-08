@@ -1280,7 +1280,11 @@ struct ThermalStateBar: View {
         IndexedFile.self
     ])
     let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: schema, configurations: [configuration])
+    // FIX: Don't use try! in #Preview — crashes on schema errors. Use try? instead.
+    guard let container = try? ModelContainer(for: schema, configurations: [configuration]) else {
+        // Return a minimal preview that doesn't depend on the full schema
+        return SettingsView()
+    }
 
     return SettingsView()
         .modelContainer(container)

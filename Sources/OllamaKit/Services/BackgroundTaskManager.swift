@@ -103,8 +103,22 @@ final class BackgroundTaskManager: @unchecked Sendable {
     }
 
     private func handleBackgroundTask(_ task: BGProcessingTask) {
-        // Always schedule the next run, even if this one fails
-        scheduleBackgroundTask()
+        // FIX: scheduleBackgroundTask() reads AppSettings.shared.serverEnabled (now @MainActor).
+        // Must check on main thread before calling scheduleBackgroundTask().
+        let serverEnabled = Thread.isMainThread ? AppSettings.shared.serverEnabled : {
+            var enabled = false
+            let semaphore = DispatchSemaphore(value: 0)
+            Task { @MainActor in
+                enabled = AppSettings.shared.serverEnabled
+                semaphore.signal()
+            }
+            semaphore.wait()
+            return enabled
+        }()
+
+        if serverEnabled {
+            scheduleBackgroundTask()
+        }
 
         // Expiration handler — if we don't complete in time, log and clean up
         task.expirationHandler = { [weak self] in
