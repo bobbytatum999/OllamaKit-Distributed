@@ -67,8 +67,14 @@ final class ServerManager: @unchecked Sendable {
                     self.isRunning = true
                     self.isStarting = false
                     self.stateLock.unlock()
-                    pendingContinuation?.resume()
-                    pendingContinuation = nil
+                    // FIX: Resume on a different queue to avoid deadlock.
+                    // NWListener.stateUpdateHandler fires on the listener's queue (our serial `queue`).
+                    // If we resume the continuation on the same serial queue while start() is blocking
+                    // on that queue, we deadlock. Dispatch to a concurrent queue to break the cycle.
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        pendingContinuation?.resume()
+                        pendingContinuation = nil
+                    }
                     self.log(category: .app, level: .info, title: "Server Ready", message: "Listening on port \(port.rawValue)")
 
                 case .failed(let error):
@@ -76,8 +82,10 @@ final class ServerManager: @unchecked Sendable {
                     self.isStarting = false
                     self.stateLock.unlock()
                     self.log(category: .app, level: .error, title: "Listener Failed", message: error.localizedDescription)
-                    pendingContinuation?.resume()
-                    pendingContinuation = nil
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        pendingContinuation?.resume()
+                        pendingContinuation = nil
+                    }
                     Task { await self.stopServer() }
 
                 case .cancelled:
@@ -96,7 +104,12 @@ final class ServerManager: @unchecked Sendable {
 
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 pendingContinuation = continuation
-                listener.start(queue: queue)
+                // FIX: Start the listener asynchronously so the continuation can be registered
+                // before the handler fires. Without async, start() can block on the serial queue
+                // if NWListener fires .ready synchronously, causing a deadlock.
+                queue.async {
+                    listener.start(queue: self.queue)
+                }
             }
 
         } catch {
@@ -565,6 +578,8 @@ final class ServerManager: @unchecked Sendable {
                 })
             } catch {
                 sendSSEEvent(["error": ["message": error.localizedDescription, "type": "server_error"]])
+                // FIX: Always send [DONE] even on error so clients don't hang waiting for it
+                connection.send(content: "data: [DONE]\n\n".data(using: .utf8), completion: .idempotent)
                 connection.cancel()
             }
         }
@@ -658,6 +673,8 @@ final class ServerManager: @unchecked Sendable {
                     connection.cancel()
                 })
             } catch {
+                // FIX: Always send [DONE] so SSE clients don't hang
+                connection.send(content: "data: [DONE]\n\n".data(using: .utf8), completion: .idempotent)
                 connection.cancel()
             }
         }
@@ -836,6 +853,8 @@ final class ServerManager: @unchecked Sendable {
                     connection.cancel()
                 })
             } catch {
+                // FIX: Always send [DONE] so SSE clients don't hang
+                connection.send(content: "data: [DONE]\n\n".data(using: .utf8), completion: .idempotent)
                 connection.cancel()
             }
         }

@@ -12,7 +12,10 @@ import Metal
 import FoundationModels
 #endif
 
-public actor DeviceCapabilityService {
+// FIX: @MainActor required because interfaceKind() calls UIDevice.current,
+// which is main-thread-only. Actor methods may run on arbitrary threads,
+// so @MainActor is needed to guarantee main-thread execution.
+public @MainActor actor DeviceCapabilityService {
     public static let shared = DeviceCapabilityService()
 
     public func currentProfile() -> DeviceProfile {

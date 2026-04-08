@@ -106,9 +106,13 @@ public actor RuntimeCoordinator {
     }
 
     public func stopGeneration() async {
+        // FIX: Cancel backends FIRST, then clear state.
+        // Previously state was reset before cancellation, allowing new requests
+        // to interleave and overwrite activeTask before the old cancellation fired.
         await ggufBackend.stopGeneration()
         await appleBackend.stopGeneration()
         await coreMLBackend.stopGeneration()
+        // State is cleared by individual backend stopGeneration() calls
     }
 
     public func generate(
@@ -121,8 +125,8 @@ public actor RuntimeCoordinator {
             request: request,
             onChunk: onChunk
         )
-        activeCatalogIdValue = entry.catalogId
-        activeBackendKind = entry.backendKind
+        // Note: activeCatalogIdValue and activeBackendKind are already set by loadModel()
+        // above — no need to set them again here (was a redundant post-await write).
         return result
     }
 
@@ -581,12 +585,14 @@ final class CoreMLPackageBackend: InferenceBackend, @unchecked Sendable {
 
     func stopGeneration() async {
         stateLock.withLock {
-            activeRequestID = UUID()
+            // FIX: Cancel task BEFORE resetting ID to prevent a new request
+            // from racing to the same requestID before the old task is cancelled.
+            activeTask?.cancel()
+            activeTask = nil
             #if canImport(AnemllCore)
             inferenceManager?.AbortGeneration(Code: 900)
             #endif
-            activeTask?.cancel()
-            activeTask = nil
+            activeRequestID = UUID()
         }
     }
 

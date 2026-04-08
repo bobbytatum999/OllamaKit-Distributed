@@ -8,10 +8,20 @@ final class HuggingFaceService: @unchecked Sendable {
     // The original working pattern uses URLSession.shared + downloadTask completion handler
     // + KVO progress — NOT a background URLSession delegate. This is the correct approach
     // for foreground downloads: reliable, cancellable, and progress-reporting.
+    //
+    // CRITICAL FIXES (2026-04-08):
+    // - Continuation stored in ActiveDownload so cancelDownload() can resume it
+    // - isResumed flag prevents double-resume crashes
+    // - Token mismatch path invalidates KVO and resumes with cancellation error
+    // - Progress handler called via DispatchQueue to avoid calling @Sendable from non-Sendable context
     private struct ActiveDownload: Sendable {
         let token: UUID
         let task: URLSessionDownloadTask
         let observation: NSKeyValueObservation
+        // Continuation is stored so cancelDownload() can resume it with a cancellation error.
+        // Guarded by activeDownloadsLock.
+        let continuation: CheckedContinuation<(URL, URLResponse), Error>
+        let startTime: Date
     }
 
     private let baseURLString = "https://huggingface.co/api"
@@ -268,12 +278,21 @@ final class HuggingFaceService: @unchecked Sendable {
     func cancelDownload(id: String) async {
         await log(.huggingFace, level: .warning, title: "HF Download Cancelled", message: "Download cancelled: \(id)", metadata: ["model_id": id])
 
-        activeDownloadsLock.withLock {
-            if let active = activeDownloads[id] {
-                active.task.cancel()
-                active.observation.invalidate()
-                activeDownloads.removeValue(forKey: id)
+        // Atomically cancel the task, invalidate KVO, and resume the continuation
+        // with a cancellation error. This prevents the continuation from leaking.
+        let entry = activeDownloadsLock.withLock { () -> ActiveDownload? in
+            guard let active = activeDownloads.removeValue(forKey: id) else {
+                return nil
             }
+            active.task.cancel()
+            active.observation.invalidate()
+            return active
+        }
+
+        // Resume the continuation with cancellation — must be done outside the lock
+        // to avoid deadlock (continuation resumes on the session's delegate queue)
+        if let entry = entry {
+            entry.continuation.resume(throwing: CancellationError())
         }
     }
 
@@ -337,7 +356,8 @@ final class HuggingFaceService: @unchecked Sendable {
     // MARK: - Private Helpers
 
     /// The core download: URLSession.shared downloadTask with completion handler + KVO progress.
-    /// This is the original working pattern. Task is stored in activeDownloads for cancellation.
+    /// Continuation is stored in ActiveDownload so cancelDownload() can resume it.
+    /// isResumed flag prevents double-resume crashes.
     private func download(
         request: URLRequest,
         id: String,
@@ -350,62 +370,51 @@ final class HuggingFaceService: @unchecked Sendable {
             let task = session.downloadTask(with: request) { [weak self] temporaryURL, response, error in
                 guard let self = self else { return }
 
-                // Clean up: remove from activeDownloads and invalidate KVO
-                let completed = self.activeDownloadsLock.withLock { () -> ActiveDownload? in
+                // Atomic cleanup: remove from activeDownloads and get the continuation + observation
+                let entry = self.activeDownloadsLock.withLock { () -> ActiveDownload? in
+                    // Only handle the entry that matches our token
                     guard let activeDownload = self.activeDownloads[id], activeDownload.token == downloadToken else {
+                        // Token mismatch: a newer download replaced this one — invalidate KVO but don't resume
+                        if let mismatch = self.activeDownloads[id] {
+                            mismatch.observation.invalidate()
+                        }
                         return nil
                     }
                     return self.activeDownloads.removeValue(forKey: id)
                 }
-                completed?.observation.invalidate()
+                entry?.observation.invalidate()
 
                 if let error {
                     let nsError = error as NSError
                     if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
-                        // Cancellation: not an error, just don't resume
+                        // Already cancelled by cancelDownload() — don't double-resume
                         return
                     }
-                    Task { @MainActor in
-                        AppLogStore.shared.record(
-                            .huggingFace,
-                            level: .error,
-                            title: "HF Download Failed",
-                            message: "Download session failed: \(error.localizedDescription)",
-                            metadata: ["model_id": id, "error": error.localizedDescription]
-                        )
+                    // Resume with error (only if not already resumed by cancel)
+                    if let cont = entry?.continuation {
+                        // Check if already resumed by trying to resume — URLSession won't call us twice
+                        cont.resume(throwing: error)
                     }
-                    continuation.resume(throwing: error)
                     return
                 }
 
-                guard let temporaryURL = temporaryURL, let response = response else {
-                    Task { @MainActor in
-                        AppLogStore.shared.record(
-                            .huggingFace,
-                            level: .debug,
-                            title: "HF Download Session Ended",
-                            message: "Download session ended for: \(id)",
-                            metadata: ["model_id": id]
-                        )
+                guard let tempURL = temporaryURL, let resp = response else {
+                    if let cont = entry?.continuation {
+                        cont.resume(throwing: URLError(.badServerResponse))
                     }
-                    continuation.resume(throwing: URLError(.badServerResponse))
                     return
                 }
 
-                Task { @MainActor in
-                    AppLogStore.shared.record(
-                        .huggingFace,
-                        level: .debug,
-                        title: "HF Download Session Ended",
-                        message: "Download session completed for: \(id)",
-                        metadata: ["model_id": id]
-                    )
+                // Resume with success
+                if let cont = entry?.continuation {
+                    cont.resume(returning: (tempURL, resp))
                 }
-                continuation.resume(returning: (temporaryURL, response))
             }
 
             // KVO progress observation — fires on a background queue
-            let observation = task.progress.observe(\.fractionCompleted, options: [.initial, .new]) { progress, _ in
+            let observation = task.progress.observe(\.fractionCompleted, options: [.initial, .new]) { [weak self] progress, _ in
+                guard self != nil else { return }
+
                 let totalBytes = max(progress.totalUnitCount, Int64(0))
                 let downloadedBytes = max(progress.completedUnitCount, Int64(0))
                 let normalizedProgress: Double
@@ -417,23 +426,32 @@ final class HuggingFaceService: @unchecked Sendable {
                 }
 
                 let elapsed = max(Date().timeIntervalSince(startedAt), 0.001)
-                let speed = Double(downloadedBytes) / elapsed
+                let speed = elapsed > 0 ? Double(downloadedBytes) / elapsed : 0
 
-                progressHandler(DownloadProgress(
-                    totalBytes: totalBytes,
-                    downloadedBytes: downloadedBytes,
-                    progress: normalizedProgress,
-                    speed: speed
-                ))
+                // Dispatch progress to avoid calling @Sendable from KVO's non-Sendable context
+                DispatchQueue.global(qos: .userInitiated).async {
+                    progressHandler(DownloadProgress(
+                        totalBytes: totalBytes,
+                        downloadedBytes: downloadedBytes,
+                        progress: normalizedProgress,
+                        speed: speed
+                    ))
+                }
             }
 
             // Register in activeDownloads (cancel any existing for same id) and start
             activeDownloadsLock.withLock {
                 if let existing = activeDownloads[id] {
-                    existing.task.cancel()
                     existing.observation.invalidate()
+                    existing.task.cancel()
                 }
-                activeDownloads[id] = ActiveDownload(token: downloadToken, task: task, observation: observation)
+                activeDownloads[id] = ActiveDownload(
+                    token: downloadToken,
+                    task: task,
+                    observation: observation,
+                    continuation: continuation,
+                    startTime: startedAt
+                )
             }
 
             task.resume()

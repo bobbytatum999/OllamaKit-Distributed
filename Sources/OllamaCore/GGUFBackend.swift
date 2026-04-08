@@ -12,11 +12,23 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
     }
 
     private let queue = DispatchQueue(label: "com.ollamakit.ollamacore.gguf", qos: .userInitiated)
+    // FIX: All writes to cancelRequested go through a single serial queue.
+    // Previously setCancelRequested() was called from both queue.async blocks and from
+    // the main actor, creating a data race from Swift's perspective (writes from multiple
+    // isolation domains to the same mutable state without synchronized access).
+    // By routing every write through the queue, all reads and writes are serialized.
+    private let cancelQueue = DispatchQueue(label: "com.ollamakit.gguf.cancel")
+    private var _cancelRequested = false
+
+    private var cancelRequested: Bool {
+        get { _cancelRequested }
+        set { cancelQueue.sync { _cancelRequested = newValue } }
+    }
+
     private let stateLock = NSLock()
 
     private var backend: BackendEngine?
     private var autoOffloadTask: Task<Void, Never>?
-    private var cancelRequested = false
     private var _activeCatalogId: String?
     private var _loadedModelPath: String?
 

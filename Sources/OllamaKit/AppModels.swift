@@ -1053,7 +1053,10 @@ enum ModelPathHelper {
     }
 }
 
-final class AppSettings: ObservableObject {
+// FIX: @MainActor required because AppSettings is ObservableObject with @Published properties
+// that are accessed from SwiftUI views (always on main thread) and from async contexts.
+// Making it @MainActor ensures all property access and mutations are thread-safe.
+@MainActor final class AppSettings: ObservableObject {
     static let shared = AppSettings()
     private static let recommendedGPULayers = 100
 

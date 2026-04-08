@@ -984,6 +984,9 @@ class ChatViewModel: ObservableObject {
             var tokensGenerated = 0
             let shouldStreamInUI = AppSettings.shared.streamingEnabled
             let startTime = Date()
+            // FIX: Wrap mutable accumulators in a lock because the @Sendable onToken closure
+            // may be called from arbitrary threads. Lock ensures atomic read-modify-write.
+            let accumLock = NSLock()
 
             // Build conversation turns with image data
             var userTurn = ConversationTurn(role: userMessage.roleValue, content: userMessage.content)
@@ -1003,12 +1006,18 @@ class ChatViewModel: ObservableObject {
                 parameters: parameters
             ) { token in
                 guard shouldStreamInUI else { return }
+                // Thread-safe accumulation: lock protects the read-modify-write of
+                // tokensGenerated and generatedText from the @Sendable closure context.
+                accumLock.lock()
                 tokensGenerated += 1
                 generatedText += token
+                let currentText = generatedText
+                let currentCount = tokensGenerated
+                accumLock.unlock()
                 let elapsed = Date().timeIntervalSince(startTime)
-                let tps = elapsed > 0 ? Double(tokensGenerated) / elapsed : 0
+                let tps = elapsed > 0 ? Double(currentCount) / elapsed : 0
                 Task { @MainActor in
-                    assistantMessage.content = generatedText
+                    assistantMessage.content = currentText
                     self.tokensPerSecond = tps
                     self.streamRevision += 1
                 }
