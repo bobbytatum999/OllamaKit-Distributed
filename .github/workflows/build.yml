@@ -51,11 +51,6 @@ jobs:
         shell: bash
 
     steps:
-      - name: Select Xcode
-        uses: mxcl/setup-xcode@v1
-        with:
-          xcode-version: "17+"
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
