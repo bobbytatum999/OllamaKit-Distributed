@@ -273,7 +273,7 @@ final class ServerManager {
 
         // Routing logic
         if path == "/api/tags" || path == "/v1/models" {
-            if path.startsWith("/v1") {
+            if path.hasPrefix("/v1") {
                 handleOpenAIListModels(on: connection, context: context)
             } else {
                 handleLegacyListModels(on: connection, context: context)
