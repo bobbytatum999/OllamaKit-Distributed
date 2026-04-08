@@ -58,23 +58,23 @@ struct ServerView: View {
                 }
             }
         }
-        .onChange(of: settings.serverPort) {
+        .onChange(of: settings.serverPort) { _, _ in
             Task {
                 await viewModel.restartServerIfNeeded()
             }
         }
-        .onChange(of: settings.serverExposureMode) {
+        .onChange(of: settings.serverExposureMode) { _, _ in
             Task {
                 await viewModel.restartServerIfNeeded()
                 await viewModel.refreshPublicHealth()
             }
         }
-        .onChange(of: settings.publicBaseURL) {
+        .onChange(of: settings.publicBaseURL) { _, _ in
             Task {
                 await viewModel.refreshPublicHealth()
             }
         }
-        .onChange(of: settings.requireApiKey) {
+        .onChange(of: settings.requireApiKey) { _, _ in
             Task {
                 await viewModel.refreshPublicHealth()
             }

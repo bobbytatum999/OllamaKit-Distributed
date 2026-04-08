@@ -79,10 +79,10 @@ struct ChatView: View {
             await modelStore.refresh()
             syncCurrentModelSelection()
         }
-        .onChange(of: downloadedModelRevision) {
+        .onChange(of: downloadedModelRevision) { _, _ in
             syncCurrentModelSelection()
         }
-        .onChange(of: viewModel.currentModel?.id) {
+        .onChange(of: viewModel.currentModel?.id) { _, _ in
             if let selectedModel = viewModel.currentModel {
                 session.modelId = selectedModel.persistentReference
                 session.updatedAt = Date()
@@ -1391,13 +1391,13 @@ private struct MessagesListView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
             }
-            .onChange(of: session.orderedMessages.count) {
+            .onChange(of: session.orderedMessages.count) { _, _ in
                 withAnimation { proxy.scrollTo(bottomID, anchor: .bottom) }
             }
-            .onChange(of: isGenerating) {
+            .onChange(of: isGenerating) { _, _ in
                 withAnimation { proxy.scrollTo(bottomID, anchor: .bottom) }
             }
-            .onChange(of: streamRevision) {
+            .onChange(of: streamRevision) { _, _ in
                 withAnimation(.easeOut(duration: 0.15)) {
                     proxy.scrollTo(bottomID, anchor: .bottom)
                 }
