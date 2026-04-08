@@ -307,9 +307,10 @@ final class AppleFoundationBackend: InferenceBackend, @unchecked Sendable {
     }
 
     func stopGeneration() async {
-        activeRequestID = UUID()
+        // FIX: Cancel task BEFORE resetting ID to prevent new requests racing to the same ID.
         activeTask?.cancel()
         activeTask = nil
+        activeRequestID = UUID()
     }
 }
 

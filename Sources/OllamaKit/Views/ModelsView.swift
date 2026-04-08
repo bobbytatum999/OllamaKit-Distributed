@@ -2003,6 +2003,10 @@ private func formatBytes(_ bytes: Int64) -> String {
 
 struct FeaturedModelsSection: View {
     @State private var showingTooltip = false
+    // FIX: Single shared ViewModel for all FeaturedModelCards instead of one per card.
+    // Previously each card created its own ModelSearchViewModel, causing N concurrent
+    // HF API calls (N = number of cards). Now shares one ViewModel.
+    @StateObject private var sharedSearchVM = ModelSearchViewModel()
 
     private let featuredModels: [FeaturedModelInfo] = [
         FeaturedModelInfo(id: "NousResearch/Meta-Llama-3.2-1B-Instruct-GGUF", displayName: "Llama 3.2 1B", size: "1.3 GB", description: "Ultra-fast, great for everyday tasks"),
@@ -2059,7 +2063,7 @@ struct FeaturedModelsSection: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(featuredModels) { model in
-                            FeaturedModelCard(model: model)
+                            FeaturedModelCard(model: model, searchVM: sharedSearchVM)
                         }
                     }
                 }
@@ -2095,7 +2099,10 @@ struct FeatureRow: View {
 
 struct FeaturedModelCard: View {
     let model: FeaturedModelInfo
-    @StateObject private var searchVM = ModelSearchViewModel()
+    // FIX: Injected shared ViewModel instead of creating one per card.
+    // Previously each card created @StateObject private var searchVM = ModelSearchViewModel()
+    // which caused N concurrent HF API calls for N cards.
+    @ObservedObject var searchVM: ModelSearchViewModel
     @State private var isDownloading = false
     @State private var downloadProgress = 0
     @State private var downloadError: String?

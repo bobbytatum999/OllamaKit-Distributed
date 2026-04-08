@@ -945,9 +945,15 @@ final class ServerManager: @unchecked Sendable {
     }
 
     private func sendErrorResponse(status: Int, message: String, on connection: NWConnection, requestID: String? = nil) {
-        let body = "{\"error\": \"\(message)\"}"
+        // FIX: Strip newlines from message to prevent HTTP header injection.
+        // User-controlled data (e.g. error.localizedDescription) could otherwise
+        // inject arbitrary headers via CRLF in the HTTP status line.
+        let safeMessage = message
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: " ")
+        let body = "{\"error\": \"\(safeMessage)\"}"
         let response = """
-        HTTP/1.1 \(status) \(message)\r
+        HTTP/1.1 \(status) \(safeMessage)\r
         Content-Type: application/json\r
         Content-Length: \(body.utf8.count)\r
         Connection: close\r
@@ -962,10 +968,14 @@ final class ServerManager: @unchecked Sendable {
     }
 
     private func sendOpenAIErrorResponse(status: Int, message: String, on connection: NWConnection, requestID: String) {
+        // FIX: Strip newlines from message to prevent HTTP header injection.
+        let safeMessage = message
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: " ")
         let errorType = openAIErrorType(for: status)
         let body: [String: Any] = [
             "error": [
-                "message": message,
+                "message": safeMessage,
                 "type": errorType,
                 "code": "\(status)"
             ]
@@ -977,7 +987,7 @@ final class ServerManager: @unchecked Sendable {
         }
 
         let httpResponse = """
-        HTTP/1.1 \(status) \(message)\r
+        HTTP/1.1 \(status) \(safeMessage)\r
         Content-Type: application/json\r
         Content-Length: \(data.count)\r
         Connection: close\r
