@@ -53,10 +53,8 @@ struct ChatView: View {
     var body: some View {
         ZStack {
             AnimatedMeshBackground()
-            
-                
-                chatInputArea
-            }
+            messagesList
+            chatInputArea
         }
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
