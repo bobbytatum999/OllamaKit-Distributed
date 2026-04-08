@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 env:
-  XCODE_VERSION: "16.2"
+  XCODE_VERSION: "26.3"
   LLAMA_CPP_TAG: "b8548"
   CONFIGURATION: ${{ (github.event_name == 'workflow_dispatch' && inputs.build_type == 'debug') && 'Debug' || 'Release' }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -35,7 +35,7 @@ env:
 jobs:
   build:
     name: Build (${{ matrix.runtime_flavor }})
-    runs-on: macos-15
+    runs-on: macos-26
     continue-on-error: ${{ matrix.runtime_flavor == 'no-runtimes' }}
     timeout-minutes: 120
 
