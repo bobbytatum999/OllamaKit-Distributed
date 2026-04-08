@@ -1,5 +1,4 @@
 import Foundation
-import OllamaCore
 
 /// Composes and normalizes conversation prompts for various model backends.
 /// Used by AppleFoundationBackend and CoreMLPackageBackend.
