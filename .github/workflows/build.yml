@@ -59,7 +59,7 @@ jobs:
       - name: Select Xcode
         uses: mxcl/setup-xcode@v1
         with:
-          xcode-version: ${{ env.XCODE_VERSION }}
+          version: ${{ env.XCODE_VERSION }}
 
       - name: Verify toolchain and project
         run: |
