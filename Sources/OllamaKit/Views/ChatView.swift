@@ -82,48 +82,8 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showingParameters) {
             NavigationStack {
-                Form {
-                    Section("Generation Parameters") {
-                        VStack(alignment: .leading) {
-                            Text("Temperature: \(paramTemperature, specifier: "%.2f")")
-                            Slider(value: $paramTemperature, in: 0...2)
-                        }
-                        VStack(alignment: .leading) {
-                            Text("Top P: \(paramTopP, specifier: "%.2f")")
-                            Slider(value: $paramTopP, in: 0...1)
-                        }
-                        VStack(alignment: .leading) {
-                            Text("Top K: \(paramTopK)")
-                            Stepper("\(paramTopK)", value: $paramTopK, in: 1...100)
-                        }
-                        VStack(alignment: .leading) {
-                            Text("Repeat Penalty: \(paramRepeatPenalty, specifier: "%.2f")")
-                            Slider(value: $paramRepeatPenalty, in: 0...2)
-                        }
-                        VStack(alignment: .leading) {
-                            Text("Max Tokens: \(paramMaxTokens)")
-                            Stepper("\(paramMaxTokens)", value: $paramMaxTokens, in: 64...8192, step: 64)
-                        }
-                    }
-                }
-                .navigationTitle("Parameters")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { showingParameters = false }
-                    }
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Reset") {
-                            paramTemperature = 0.7
-                            paramTopP = 0.9
-                            paramTopK = 40
-                            paramRepeatPenalty = 1.1
-                            paramMaxTokens = 2048
-                        }
-                    }
-                }
+                parametersFormContent
             }
-            .presentationDetents([.medium])
         }
         .task {
             await modelStore.refresh()
@@ -626,6 +586,51 @@ struct ChatView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var parametersFormContent: some View {
+        Form {
+            Section("Generation Parameters") {
+                VStack(alignment: .leading) {
+                    Text("Temperature: \(paramTemperature, specifier: "%.2f")")
+                    Slider(value: $paramTemperature, in: 0...2)
+                }
+                VStack(alignment: .leading) {
+                    Text("Top P: \(paramTopP, specifier: "%.2f")")
+                    Slider(value: $paramTopP, in: 0...1)
+                }
+                VStack(alignment: .leading) {
+                    Text("Top K: \(paramTopK)")
+                    Stepper("\(paramTopK)", value: $paramTopK, in: 1...100)
+                }
+                VStack(alignment: .leading) {
+                    Text("Repeat Penalty: \(paramRepeatPenalty, specifier: "%.2f")")
+                    Slider(value: $paramRepeatPenalty, in: 0...2)
+                }
+                VStack(alignment: .leading) {
+                    Text("Max Tokens: \(paramMaxTokens)")
+                    Stepper("\(paramMaxTokens)", value: $paramMaxTokens, in: 64...8192, step: 64)
+                }
+            }
+        }
+        .navigationTitle("Parameters")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { showingParameters = false }
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Reset") {
+                    paramTemperature = 0.7
+                    paramTopP = 0.9
+                    paramTopK = 40
+                    paramRepeatPenalty = 1.1
+                    paramMaxTokens = 2048
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
 struct MessageBubble: View {
