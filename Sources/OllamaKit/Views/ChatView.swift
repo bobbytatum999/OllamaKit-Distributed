@@ -55,8 +55,7 @@ struct ChatView: View {
             AnimatedMeshBackground()
             
             VStack(spacing: 0) {
-                // Messages List
-                MessagesListView(
+                messagesList
                     session: session,
                     isGenerating: viewModel.isGenerating,
                     tokensPerSecond: viewModel.tokensPerSecond,
@@ -409,6 +408,17 @@ struct ChatView: View {
     }
 
 // MARK: - Body Helper Computed Properties
+
+    private var messagesList: some View {
+        MessagesListView(
+            session: session,
+            isGenerating: viewModel.isGenerating,
+            tokensPerSecond: viewModel.tokensPerSecond,
+            streamRevision: viewModel.streamRevision,
+            onBranch: branchFromHere,
+            bottomID: bottomID
+        )
+    }
 
     @ViewBuilder
     private var chatInputArea: some View {
