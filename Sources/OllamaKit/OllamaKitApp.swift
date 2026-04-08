@@ -282,7 +282,6 @@ struct OnboardingView: View {
                     },
                     recommendedModels: recommendedModels,
                     selectedModel: $selectedOnboardingModel
-                    selectedModel: $selectedOnboardingModel
                 )
                 .tag(3)
             }
