@@ -65,207 +65,12 @@ struct ChatView: View {
                     bottomID: bottomID
                 )
                 
-                // Input Area
-                VStack(spacing: 0) {
-                    Divider()
-                    
-                    // Image thumbnails strip
-                    if !selectedImages.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
-                                    ZStack(alignment: .topTrailing) {
-                                        Image(uiImage: image)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 60, height: 60)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        Button {
-                                            selectedImages.remove(at: index)
-                                            if index < selectedPhotoItems.count {
-                                                selectedPhotoItems.remove(at: index)
-                                            }
-                                        } label: {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .font(.system(size: 18))
-                                                .foregroundStyle(.white)
-                                                .background(Circle().fill(.black.opacity(0.5)))
-                                        }
-                                        .offset(x: 4, y: -4)
-                                    }
-                                }
-                                
-                                // Add more photos button
-                                PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 4, matching: .images) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(.ultraThinMaterial)
-                                            .frame(width: 60, height: 60)
-                                        Image(systemName: "plus")
-                                            .font(.system(size: 20))
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .onChange(of: selectedPhotoItems) { _, newItems in
-                                    Task {
-                                        var newImages: [UIImage] = []
-                                        for item in newItems {
-                                            if let data = try? await item.loadTransferable(type: Data.self),
-                                               let image = UIImage(data: data) {
-                                                newImages.append(image)
-                                            }
-                                        }
-                                        selectedImages = newImages
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                        }
-                        .padding(.vertical, 8)
-                    }
-                    
-                    HStack(spacing: 12) {
-                        // Model selector button
-                        Button(action: { showingModelSelector = true }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "cube.fill")
-                                    .font(.system(size: 12))
-                                Text(viewModel.currentModel?.displayName ?? "Select Model")
-                                    .font(.system(size: 13, weight: .medium))
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule()
-                                    .fill(.ultraThinMaterial)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(viewModel.isGenerating)
-                        
-                        Spacer()
-                        
-                        if viewModel.isGenerating {
-                            Button(action: { viewModel.stopGeneration() }) {
-                                Image(systemName: "stop.circle.fill")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(.red)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-
-                    HStack(spacing: 8) {
-                        // Photos picker button
-                        PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 4, matching: .images) {
-                            Image(systemName: selectedImages.isEmpty ? "photo" : "photo.fill")
-                                .font(.system(size: 22))
-                                .foregroundStyle(selectedImages.isEmpty ? Color.secondary : Color.accentColor)
-                        }
-                        .onChange(of: selectedPhotoItems) { _, newItems in
-                            Task {
-                                var newImages: [UIImage] = []
-                                for item in newItems {
-                                    if let data = try? await item.loadTransferable(type: Data.self),
-                                       let image = UIImage(data: data) {
-                                        newImages.append(image)
-                                    }
-                                }
-                                // Append new images, avoid duplicates
-                                for img in newImages {
-                                    if !selectedImages.contains(where: { $0.pngData() == img.pngData() }) {
-                                        selectedImages.append(img)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        TextField("Message", text: $messageText, axis: .vertical)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 16))
-                            .lineLimit(1...5)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .fill(.ultraThinMaterial)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 20)
-                                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                                    )
-                            )
-                        
-                        Button(action: sendMessage) {
-                            Image(systemName: trimmedMessageText.isEmpty ? "waveform" : "arrow.up.circle.fill")
-                                .font(.system(size: 32))
-                                .foregroundStyle(trimmedMessageText.isEmpty ? Color.secondary : Color.accentColor)
-                        }
-                        .disabled(trimmedMessageText.isEmpty || viewModel.isGenerating)
-
-                        Button(action: toggleRecording) {
-                            Image(systemName: isRecording ? "mic.slash.fill" : "mic.fill")
-                                .font(.system(size: 22))
-                                .foregroundStyle(isRecording ? Color.red : Color.secondary)
-                        }
-                        .disabled(viewModel.isGenerating)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                }
-                .background(.ultraThinMaterial)
+                chatInputArea
             }
         }
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 16) {
-                    Button {
-                        showingParameters = true
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                    
-                    Menu {
-                        Button {
-                            pendingTitle = session.title
-                            showingRenameDialog = true
-                        } label: {
-                            Label("Rename", systemImage: "pencil")
-                        }
-                        
-                        Button {
-                            exportChat()
-                        } label: {
-                            Label("Export as Markdown", systemImage: "square.and.arrow.up")
-                        }
-                        
-                        Button {
-                            showingCompareSheet = true
-                        } label: {
-                            Label("Compare Models", systemImage: "rectangle.split.2x1")
-                        }
-                        
-                        Button {
-                            clearMessages()
-                        } label: {
-                            Label("Clear Messages", systemImage: "trash")
-                        }
-                        .disabled(viewModel.isGenerating)
-                        
-                        Button(role: .destructive) {
-                            deleteChat()
-                        } label: {
-                            Label("Delete Chat", systemImage: "trash")
-                        }
-                        .disabled(viewModel.isGenerating)
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                }
-            }
-        }
+        .toolbar { chatToolbar }
         .sheet(isPresented: $showingModelSelector) {
             ModelSelectorSheet(selectedModel: $viewModel.currentModel)
         }
@@ -447,9 +252,8 @@ struct ChatView: View {
         }
         
         // Navigate to the branch session
-        Task { @MainActor in
-            session = branchSession
-        }
+        // Note: session navigation handled by parent view
+        _ = branchSession
     }
 
     private func deleteChat() {
@@ -644,6 +448,186 @@ struct ChatView: View {
         }
     }
 }
+
+// MARK: - Body Helper Computed Properties
+
+    @ViewBuilder
+    private var chatInputArea: some View {
+        VStack(spacing: 0) {
+            Divider()
+            
+            // Image thumbnails strip
+            if !selectedImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 60, height: 60)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                Button {
+                                    selectedImages.remove(at: index)
+                                    if index < selectedPhotoItems.count {
+                                        selectedPhotoItems.remove(at: index)
+                                    }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(.white)
+                                        .background(Circle().fill(.black.opacity(0.5)))
+                                }
+                                .offset(x: 4, y: -4)
+                            }
+                        }
+                        
+                        PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 4, matching: .images) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 60, height: 60)
+                                Image(systemName: "plus")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .onChange(of: selectedPhotoItems) { _, newItems in
+                            Task {
+                                var newImages: [UIImage] = []
+                                for item in newItems {
+                                    if let data = try? await item.loadTransferable(type: Data.self),
+                                       let image = UIImage(data: data) {
+                                        newImages.append(image)
+                                    }
+                                }
+                                selectedImages = newImages
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+                .padding(.vertical, 8)
+            }
+            
+            HStack(spacing: 12) {
+                Button(action: { showingModelSelector = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "cube.fill")
+                            .font(.system(size: 12))
+                        Text(viewModel.currentModel?.displayName ?? "Select Model")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(.ultraThinMaterial))
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isGenerating)
+                
+                Spacer()
+                
+                if viewModel.isGenerating {
+                    Button(action: { viewModel.stopGeneration() }) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+
+            HStack(spacing: 8) {
+                PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 4, matching: .images) {
+                    Image(systemName: selectedImages.isEmpty ? "photo" : "photo.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(selectedImages.isEmpty ? Color.secondary : Color.accentColor)
+                }
+                .onChange(of: selectedPhotoItems) { _, newItems in
+                    Task {
+                        var newImages: [UIImage] = []
+                        for item in newItems {
+                            if let data = try? await item.loadTransferable(type: Data.self),
+                               let image = UIImage(data: data) {
+                                newImages.append(image)
+                            }
+                        }
+                        for img in newImages {
+                            if !selectedImages.contains(where: { $0.pngData() == img.pngData() }) {
+                                selectedImages.append(img)
+                            }
+                        }
+                    }
+                }
+                
+                TextField("Message", text: $messageText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16))
+                    .lineLimit(1...5)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(.white.opacity(0.1), lineWidth: 0.5)
+                            )
+                    )
+                
+                Button(action: sendMessage) {
+                    Image(systemName: trimmedMessageText.isEmpty ? "waveform" : "arrow.up.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(trimmedMessageText.isEmpty ? Color.secondary : Color.accentColor)
+                }
+                .disabled(trimmedMessageText.isEmpty || viewModel.isGenerating)
+
+                Button(action: toggleRecording) {
+                    Image(systemName: isRecording ? "mic.slash.fill" : "mic.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(isRecording ? Color.red : Color.secondary)
+                }
+                .disabled(viewModel.isGenerating)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .background(.ultraThinMaterial)
+    }
+
+    @ToolbarContentBuilder
+    private var chatToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            HStack(spacing: 16) {
+                Button { showingParameters = true } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                
+                Menu {
+                    Button { pendingTitle = session.title; showingRenameDialog = true } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    Button { exportChat() } label: {
+                        Label("Export as Markdown", systemImage: "square.and.arrow.up")
+                    }
+                    Button { showingCompareSheet = true } label: {
+                        Label("Compare Models", systemImage: "rectangle.split.2x1")
+                    }
+                    Button { clearMessages() } label: {
+                        Label("Clear Messages", systemImage: "trash")
+                    }
+                    .disabled(viewModel.isGenerating)
+                    Button(role: .destructive) { deleteChat() } label: {
+                        Label("Delete Chat", systemImage: "trash")
+                    }
+                    .disabled(viewModel.isGenerating)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+    }
 
 struct MessageBubble: View {
     let message: ChatMessage

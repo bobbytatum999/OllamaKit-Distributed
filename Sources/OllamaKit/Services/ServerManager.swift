@@ -369,7 +369,7 @@ fileprivate func handleRunningModels(on connection: NWConnection, context: Serve
         // Implementation
     }
 
-    func prepareModel(
+    fileprivate func prepareModel(
         named name: String,
         context: ServerRequestContext
     ) async throws -> ModelSnapshot {
