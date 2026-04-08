@@ -11,23 +11,23 @@ struct OllamaKitApp: App {
     @State private var showingShareBanner = false
     @State private var pendingShareContent: [String: Any]?
     @Environment(\.scenePhase) private var scenePhase
-    
+
     let container: ModelContainer
-    
+
     @MainActor
     init() {
         container = Self.makeModelContainer()
         ModelStorage.shared.configure(container: container)
         LocalFilesScanner.shared.configure(container: container)
     }
-    
+
     var body: some Scene {
         WindowGroup {
             ZStack {
                 ContentView()
                     .environment(\.scenePhase, scenePhase)
                     .modelContainer(container)
-                
+
                 if thermalState == .serious {
                     VStack {
                         HStack {
@@ -116,6 +116,36 @@ struct OllamaKitApp: App {
 
     @MainActor
     private static func makeModelContainer() -> ModelContainer {
+        let schema = Schema([
+            DownloadedModel.self,
+            ChatSession.self,
+            ChatMessage.self,
+            FileSource.self,
+            IndexedFile.self,
+            SavedAutomation.self
+        ])
+
+        do {
+            let persistentConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            return try ModelContainer(for: schema, configurations: [persistentConfig])
+        } catch {
+            AppLogStore.shared.record(
+                .app,
+                level: .warning,
+                title: "SwiftData Persistent Store Failed",
+                message: "Falling back to in-memory store: \(error.localizedDescription)",
+                metadata: ["error": error.localizedDescription]
+            )
+        }
+
+        do {
+            let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            return try ModelContainer(for: schema, configurations: [inMemoryConfig])
+        } catch {
+            fatalError("Failed to create any ModelContainer: \(error)")
+        }
+    }
+}
 
 struct SharePendingBanner: View {
     let content: [String: Any]?
@@ -182,39 +212,6 @@ struct SharePendingBanner: View {
     }
 }
 
-    @MainActor
-    private static func makeModelContainer() -> ModelContainer {
-        let schema = Schema([
-            DownloadedModel.self,
-            ChatSession.self,
-            ChatMessage.self,
-            FileSource.self,
-            IndexedFile.self,
-            SavedAutomation.self
-        ])
-
-        do {
-            let persistentConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-            return try ModelContainer(for: schema, configurations: [persistentConfig])
-        } catch {
-            AppLogStore.shared.record(
-                .app,
-                level: .warning,
-                title: "SwiftData Persistent Store Failed",
-                message: "Falling back to in-memory store: \(error.localizedDescription)",
-                metadata: ["error": error.localizedDescription]
-            )
-        }
-
-        do {
-            let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            return try ModelContainer(for: schema, configurations: [inMemoryConfig])
-        } catch {
-            fatalError("Failed to create any ModelContainer: \(error)")
-        }
-    }
-}
-
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         _ = BackgroundTaskManager.shared
@@ -224,7 +221,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         }
         return true
     }
-    
+
     func applicationDidEnterBackground(_ application: UIApplication) {
         guard ServerManager.shared.isServerRunning else { return }
         // Keep server running in background
@@ -245,21 +242,11 @@ struct OnboardingView: View {
         ("phi3.5:3b", "Phi-3.5 Mini 3B", "Strong reasoning in a small package", "2.3 GB"),
         ("mistral:7b", "Mistral 7B", "Popular open-source model", "4.4 GB")
     ]
-    @State private var selectedOnboardingModel: String?
-    @StateObject private var modelStore = ModelStorage.shared
-    
-    private let recommendedModels: [(id: String, displayName: String, description: String, size: String)] = [
-        ("llama3.2:1b", "Llama 3.2 1B", "Fast & lightweight, great for everyday use", "1.3 GB"),
-        ("llama3.2:3b", "Llama 3.2 3B", "Balanced performance and quality", "2.0 GB"),
-        ("qwen2.5:1.5b", "Qwen 2.5 1.5B", "Excellent multilingual support", "1.0 GB"),
-        ("phi3.5:3b", "Phi-3.5 Mini 3B", "Strong reasoning in a small package", "2.3 GB"),
-        ("mistral:7b", "Mistral 7B", "Popular open-source model", "4.4 GB")
-    ]
-    
+
     var body: some View {
         ZStack {
             Color(hex: "0F0F23").ignoresSafeArea()
-            
+
             TabView(selection: $currentPage) {
                 OnboardingPage(
                     icon: "cpu",
@@ -267,21 +254,21 @@ struct OnboardingView: View {
                     subtitle: "Run local AI models directly on your iPhone"
                 )
                 .tag(0)
-                
+
                 OnboardingPage(
                     icon: "arrow.down.circle",
                     title: "Download Models",
                     subtitle: "Browse thousands of GGUF models from HuggingFace. Downloads stay on your device."
                 )
                 .tag(1)
-                
+
                 OnboardingPage(
                     icon: "server.rack",
                     title: "API Server",
                     subtitle: "Expose a local API server and use OllamaKit as a backend for any app"
                 )
                 .tag(2)
-                
+
                 OnboardingPage(
                     icon: "checkmark.circle",
                     title: "Ready to Go",
@@ -296,7 +283,7 @@ struct OnboardingView: View {
                 .tag(3)
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
-            
+
             VStack {
                 Spacer()
                 if currentPage < 3 {
@@ -332,7 +319,7 @@ struct OnboardingPage: View {
     var onModelSelected: ((String?) -> Void)?
     var recommendedModels: [(id: String, displayName: String, description: String, size: String)] = []
     @Binding var selectedModel: String?
-    
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -347,7 +334,7 @@ struct OnboardingPage: View {
                 .foregroundStyle(.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
-            
+
             if showModelPicker {
                 VStack(spacing: 12) {
                     ForEach(recommendedModels, id: \.id) { model in
@@ -393,7 +380,7 @@ struct OnboardingPage: View {
                 }
                 .padding(.horizontal, 32)
             }
-            
+
             Spacer()
             Spacer()
         }

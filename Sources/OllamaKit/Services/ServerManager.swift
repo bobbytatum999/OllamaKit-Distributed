@@ -533,7 +533,7 @@ final class ServerManager {
             }
         }
 
-    private func handleLegacyListModels(on connection: NWConnection, context: ServerRequestContext) {
+    func handleLegacyListModels(on connection: NWConnection, context: ServerRequestContext) {
         Task {
             let models = await serverModels()
             let body: [String: Any] = [
@@ -544,7 +544,7 @@ final class ServerManager {
         }
     }
 
-    private func handleOpenAIListModels(on connection: NWConnection, context: ServerRequestContext) {
+    func handleOpenAIListModels(on connection: NWConnection, context: ServerRequestContext) {
         Task {
             let models = await serverModels()
             let createdAt = Int(Date().timeIntervalSince1970)
@@ -557,7 +557,7 @@ final class ServerManager {
         }
     }
 
-    private func handleLegacyShow(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handleLegacyShow(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard
             let json = decodeJSONObject(from: request),
             let modelName = (json["name"] as? String)?.trimmedForLookup.nonEmpty
@@ -592,7 +592,7 @@ final class ServerManager {
         }
     }
 
-    private func handleLegacyGenerate(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handleLegacyGenerate(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard
             let json = decodeJSONObject(from: request),
             let modelName = json["model"] as? String
@@ -645,7 +645,7 @@ final class ServerManager {
         }
     }
 
-    private func handleLegacyChat(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handleLegacyChat(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard
             let json = decodeJSONObject(from: request),
             let messages = json["messages"] as? [[String: Any]],
@@ -692,7 +692,7 @@ final class ServerManager {
         }
     }
 
-    private func handleOpenAICompletion(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handleOpenAICompletion(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard
             let json = decodeJSONObject(from: request),
             let modelName = json["model"] as? String
@@ -760,7 +760,7 @@ final class ServerManager {
         }
     }
 
-    private func handleOpenAIChatCompletion(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handleOpenAIChatCompletion(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard
             let json = decodeJSONObject(from: request),
             let messages = json["messages"] as? [[String: Any]],
@@ -815,7 +815,7 @@ final class ServerManager {
         }
     }
 
-    private func handleLegacyEmbeddings(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handleLegacyEmbeddings(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard
             let json = decodeJSONObject(from: request),
             let modelName = json["model"] as? String
@@ -852,7 +852,7 @@ final class ServerManager {
         }
     }
 
-    private func handleOpenAIEmbeddings(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handleOpenAIEmbeddings(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard
             let json = decodeJSONObject(from: request),
             let modelName = json["model"] as? String
@@ -891,7 +891,7 @@ final class ServerManager {
         }
     }
 
-    private func handleOpenAIResponses(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handleOpenAIResponses(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard
             let json = decodeJSONObject(from: request),
             let modelName = json["model"] as? String
@@ -943,7 +943,7 @@ final class ServerManager {
         }
     }
 
-    private func handlePull(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handlePull(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard let json = decodeJSONObject(from: request) else {
             sendErrorResponse(status: 400, message: "Invalid request", on: connection, context: context)
             return
@@ -1132,7 +1132,7 @@ final class ServerManager {
         }
     }
 
-    private func handleDelete(request: String, on connection: NWConnection, context: ServerRequestContext) {
+    func handleDelete(request: String, on connection: NWConnection, context: ServerRequestContext) {
         guard
             let json = decodeJSONObject(from: request),
             let modelName = json["name"] as? String
@@ -1154,7 +1154,7 @@ final class ServerManager {
         }
     }
 
-    private func handleRunningModels(on connection: NWConnection, context: ServerRequestContext) {
+    func handleRunningModels(on connection: NWConnection, context: ServerRequestContext) {
         Task {
             let models: [[String: Any]]
 
@@ -1180,7 +1180,7 @@ final class ServerManager {
         }
     }
 
-    private func prepareModel(
+    func prepareModel(
         named modelName: String,
         requiredRoute: ServerSupportedRoute,
         payload: ParsedInferencePayload,
@@ -1257,7 +1257,7 @@ final class ServerManager {
         return model
     }
 
-    private func serverModels() async -> [ModelSnapshot] {
+    func serverModels() async -> [ModelSnapshot] {
         do {
             let entries = try await RuntimeCoordinator.shared.availableEntries(
                 contextLength: AppSettings.shared.defaultContextLength
@@ -1279,7 +1279,7 @@ final class ServerManager {
         }
     }
 
-    private func remoteAddress(for connection: NWConnection) -> String {
+    func remoteAddress(for connection: NWConnection) -> String {
         let endpoint = connection.currentPath?.remoteEndpoint ?? connection.endpoint
 
         switch endpoint {
@@ -1298,7 +1298,7 @@ final class ServerManager {
         }
     }
 
-    private func serverModel(named modelName: String) async -> ModelSnapshot? {
+    func serverModel(named modelName: String) async -> ModelSnapshot? {
         guard let snapshot = await resolvedServerModel(named: modelName) else {
             return nil
         }
@@ -1306,7 +1306,7 @@ final class ServerManager {
         return snapshot.isServerRunnable ? snapshot : nil
     }
 
-    private func resolvedServerModel(named modelName: String) async -> ModelSnapshot? {
+    func resolvedServerModel(named modelName: String) async -> ModelSnapshot? {
         do {
             guard let entry = try await RuntimeCoordinator.shared.resolveModelReference(
                 modelName,
@@ -1322,7 +1322,7 @@ final class ServerManager {
         }
     }
 
-    private func legacyModelMetadata(for snapshot: ModelSnapshot) -> [String: Any] {
+    func legacyModelMetadata(for snapshot: ModelSnapshot) -> [String: Any] {
         let identifier = legacyModelName(for: snapshot)
         return [
             "name": identifier,
@@ -1340,7 +1340,7 @@ final class ServerManager {
         ]
     }
 
-    private func openAIModelMetadata(for snapshot: ModelSnapshot, createdAt: Int) -> [String: Any] {
+    func openAIModelMetadata(for snapshot: ModelSnapshot, createdAt: Int) -> [String: Any] {
         [
             "id": openAIModelIdentifier(for: snapshot),
             "object": "model",
@@ -1352,7 +1352,7 @@ final class ServerManager {
         ]
     }
 
-    private func capabilityPayload(for snapshot: ModelSnapshot) -> [String: Any] {
+    func capabilityPayload(for snapshot: ModelSnapshot) -> [String: Any] {
         let capabilities = snapshot.effectiveServerCapabilities
         return [
             "text_generation": capabilities.textGeneration,
@@ -1368,7 +1368,7 @@ final class ServerManager {
         ]
     }
 
-    private func validationPayload(for snapshot: ModelSnapshot) -> [String: Any] {
+    func validationPayload(for snapshot: ModelSnapshot) -> [String: Any] {
         [
             "status": snapshot.effectiveValidationStatus.rawValue,
             "message": snapshot.validationSummary ?? "",
@@ -1376,7 +1376,7 @@ final class ServerManager {
         ]
     }
 
-    private func parseChatPayload(
+    func parseChatPayload(
         messages: [[String: Any]],
         json: [String: Any],
         defaultStream: Bool
@@ -1414,7 +1414,7 @@ final class ServerManager {
         )
     }
 
-    private func parseResponsesPayload(from json: [String: Any]) -> ParsedInferencePayload {
+    func parseResponsesPayload(from json: [String: Any]) -> ParsedInferencePayload {
         let tools = parseTools(from: json)
         let reasoning = parseReasoning(from: json)
         let stream = json["stream"] as? Bool ?? false
@@ -1456,7 +1456,7 @@ final class ServerManager {
         )
     }
 
-    private func parseTools(from json: [String: Any]) -> [InferenceToolDefinition] {
+    func parseTools(from json: [String: Any]) -> [InferenceToolDefinition] {
         guard let toolObjects = json["tools"] as? [[String: Any]] else {
             return []
         }
@@ -1483,7 +1483,7 @@ final class ServerManager {
         }
     }
 
-    private func parseReasoning(from json: [String: Any]) -> InferenceReasoningOptions? {
+    func parseReasoning(from json: [String: Any]) -> InferenceReasoningOptions? {
         if let reasoning = json["reasoning"] as? [String: Any] {
             return InferenceReasoningOptions(
                 effort: reasoning["effort"] as? String,
@@ -1498,7 +1498,7 @@ final class ServerManager {
         return nil
     }
 
-    private func extractContentParts(from value: Any?) -> [ConversationContentPart] {
+    func extractContentParts(from value: Any?) -> [ConversationContentPart] {
         if let text = value as? String {
             return text.trimmedForLookup.isEmpty ? [] : [.text(text)]
         }
@@ -1574,7 +1574,7 @@ final class ServerManager {
         }
     }
 
-    private func conversationText(from value: Any?) -> String? {
+    func conversationText(from value: Any?) -> String? {
         let text = extractContentParts(from: value)
             .compactMap(\.text)
             .joined()
@@ -1583,7 +1583,7 @@ final class ServerManager {
         return text ?? extractStringContent(from: value)
     }
 
-    private func serializedJSONString(from value: Any?) -> String? {
+    func serializedJSONString(from value: Any?) -> String? {
         guard let value,
               JSONSerialization.isValidJSONObject(value),
               let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
@@ -1595,7 +1595,7 @@ final class ServerManager {
         return string
     }
 
-    private func validateCapabilities(
+    func validateCapabilities(
         for model: ModelSnapshot,
         requiredRoute: ServerSupportedRoute,
         payload: ParsedInferencePayload
@@ -1646,11 +1646,11 @@ final class ServerManager {
         }
     }
 
-    private func unsupportedCapabilityError(_ message: String) -> NSError {
+    func unsupportedCapabilityError(_ message: String) -> NSError {
         NSError(domain: "ServerManager", code: 400, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    private func streamLegacyGenerate(
+    func streamLegacyGenerate(
         prompt: String,
         systemPrompt: String?,
         model: String,
@@ -1696,7 +1696,7 @@ final class ServerManager {
         }
     }
 
-    private func completeLegacyGenerate(
+    func completeLegacyGenerate(
         prompt: String,
         systemPrompt: String?,
         model: String,
@@ -1730,7 +1730,7 @@ final class ServerManager {
         }
     }
 
-    private func streamLegacyChat(
+    func streamLegacyChat(
         conversationTurns: [ConversationTurn],
         systemPrompt: String?,
         model: String,
@@ -1787,7 +1787,7 @@ final class ServerManager {
         }
     }
 
-    private func completeLegacyChat(
+    func completeLegacyChat(
         conversationTurns: [ConversationTurn],
         systemPrompt: String?,
         model: String,
@@ -1829,7 +1829,7 @@ final class ServerManager {
         }
     }
 
-    private func streamOpenAICompletion(
+    func streamOpenAICompletion(
         requestId: String,
         createdAt: Int,
         model: String,
@@ -1877,7 +1877,7 @@ final class ServerManager {
         }
     }
 
-    private func completeOpenAICompletion(
+    func completeOpenAICompletion(
         requestId: String,
         createdAt: Int,
         model: String,
@@ -1916,7 +1916,7 @@ final class ServerManager {
         }
     }
 
-    private func streamOpenAIChatCompletion(
+    func streamOpenAIChatCompletion(
         requestId: String,
         createdAt: Int,
         model: String,
@@ -1983,7 +1983,7 @@ final class ServerManager {
         }
     }
 
-    private func completeOpenAIChatCompletion(
+    func completeOpenAIChatCompletion(
         requestId: String,
         createdAt: Int,
         model: String,
@@ -2031,7 +2031,7 @@ final class ServerManager {
         }
     }
 
-    private func streamOpenAIResponses(
+    func streamOpenAIResponses(
         requestId: String,
         createdAt: Int,
         model: String,
@@ -2090,7 +2090,7 @@ final class ServerManager {
         }
     }
 
-    private func completeOpenAIResponses(
+    func completeOpenAIResponses(
         requestId: String,
         createdAt: Int,
         model: String,
@@ -2142,21 +2142,21 @@ final class ServerManager {
         }
     }
 
-    private func legacyModelName(for snapshot: ModelSnapshot) -> String {
+    func legacyModelName(for snapshot: ModelSnapshot) -> String {
         snapshot.apiIdentifier
     }
 
-    private func openAIModelIdentifier(for snapshot: ModelSnapshot) -> String {
+    func openAIModelIdentifier(for snapshot: ModelSnapshot) -> String {
         snapshot.apiIdentifier
     }
 
-    private func iso8601String(from date: Date) -> String {
+    func iso8601String(from date: Date) -> String {
         Self.iso8601FormatterLock.lock()
         defer { Self.iso8601FormatterLock.unlock() }
         return Self.iso8601Formatter.string(from: date)
     }
 
-    private func isInstructionRole(_ role: String?) -> Bool {
+    func isInstructionRole(_ role: String?) -> Bool {
         guard let role else { return false }
         return role.caseInsensitiveCompare("system") == .orderedSame
             || role.caseInsensitiveCompare("developer") == .orderedSame
@@ -2167,7 +2167,7 @@ final class ServerManager {
         case openAI
     }
 
-    private func modelParameters(from json: [String: Any], apiStyle: ParameterAPIStyle) -> ModelParameters {
+    func modelParameters(from json: [String: Any], apiStyle: ParameterAPIStyle) -> ModelParameters {
         var parameters = ModelParameters.appDefault
 
         let parameterSource: [String: Any]
@@ -2215,7 +2215,7 @@ final class ServerManager {
         return parameters
     }
 
-    private func extractDouble(forKeys keys: [String], from json: [String: Any]) -> Double? {
+    func extractDouble(forKeys keys: [String], from json: [String: Any]) -> Double? {
         for key in keys {
             guard let value = json[key] else { continue }
 
@@ -2231,7 +2231,7 @@ final class ServerManager {
         return nil
     }
 
-    private func extractInt(forKeys keys: [String], from json: [String: Any]) -> Int? {
+    func extractInt(forKeys keys: [String], from json: [String: Any]) -> Int? {
         for key in keys {
             guard let value = json[key] else { continue }
 
@@ -2247,12 +2247,12 @@ final class ServerManager {
         return nil
     }
 
-    private func decodeJSONObject(from request: String) -> [String: Any]? {
+    func decodeJSONObject(from request: String) -> [String: Any]? {
         guard let body = extractBody(from: request) else { return nil }
         return try? JSONSerialization.jsonObject(with: body) as? [String: Any]
     }
 
-    private func extractStringContent(from value: Any?) -> String? {
+    func extractStringContent(from value: Any?) -> String? {
         if let value = value as? String {
             return value
         }
@@ -2280,7 +2280,7 @@ final class ServerManager {
         return nil
     }
 
-    private func sendJSONResponse(
+    func sendJSONResponse(
         status: Int,
         body: [String: Any],
         on connection: NWConnection,
@@ -2311,7 +2311,7 @@ final class ServerManager {
         })
     }
 
-    private func sendStreamHeaders(
+    func sendStreamHeaders(
         contentType: String = "text/event-stream",
         on connection: NWConnection,
         context: ServerRequestContext? = nil
@@ -2332,7 +2332,7 @@ final class ServerManager {
         connection.send(content: header.data(using: .utf8), completion: .contentProcessed { _ in })
     }
 
-    private func sendCORSPreflightResponse(on connection: NWConnection, context: ServerRequestContext? = nil) {
+    func sendCORSPreflightResponse(on connection: NWConnection, context: ServerRequestContext? = nil) {
         logResponse(status: 204, body: nil, context: context, responseKind: "preflight")
         let header = """
         HTTP/1.1 204 No Content
@@ -2351,7 +2351,7 @@ final class ServerManager {
         })
     }
 
-    private func sendSSEChunk(
+    func sendSSEChunk(
         data: [String: Any],
         on connection: NWConnection,
         closeAfterSend: Bool,
@@ -2370,7 +2370,7 @@ final class ServerManager {
         sendRawSSEChunk("data: \(jsonString)\n\n", on: connection, closeAfterSend: closeAfterSend, context: context)
     }
 
-    private func sendNDJSONChunk(
+    func sendNDJSONChunk(
         data: [String: Any],
         on connection: NWConnection,
         closeAfterSend: Bool,
@@ -2389,11 +2389,11 @@ final class ServerManager {
         sendRawSSEChunk("\(jsonString)\n", on: connection, closeAfterSend: closeAfterSend, context: context)
     }
 
-    private func sendDoneChunk(on connection: NWConnection, context: ServerRequestContext? = nil) {
+    func sendDoneChunk(on connection: NWConnection, context: ServerRequestContext? = nil) {
         sendRawSSEChunk("data: [DONE]\n\n", on: connection, closeAfterSend: true, context: context)
     }
 
-    private func sendOpenAIStreamError(
+    func sendOpenAIStreamError(
         status: Int,
         message: String,
         type: String = "server_error",
@@ -2415,7 +2415,7 @@ final class ServerManager {
         sendDoneChunk(on: connection, context: context)
     }
 
-    private func sendPullError(
+    func sendPullError(
         stream: Bool,
         status: Int,
         message: String,
@@ -2439,7 +2439,7 @@ final class ServerManager {
         }
     }
 
-    private func sendRawSSEChunk(
+    func sendRawSSEChunk(
         _ chunk: String,
         on connection: NWConnection,
         closeAfterSend: Bool,
@@ -2453,7 +2453,7 @@ final class ServerManager {
         })
     }
 
-    private func sendErrorResponse(
+    func sendErrorResponse(
         status: Int,
         message: String,
         on connection: NWConnection,
@@ -2462,7 +2462,7 @@ final class ServerManager {
         sendJSONResponse(status: status, body: ["error": message], on: connection, context: context)
     }
 
-    private func sendOpenAIErrorResponse(
+    func sendOpenAIErrorResponse(
         status: Int,
         message: String,
         type: String = "invalid_request_error",
@@ -2482,11 +2482,11 @@ final class ServerManager {
         sendJSONResponse(status: status, body: ["error": errorBody], on: connection, context: context)
     }
 
-    private func extractBody(from request: String) -> Data? {
+    func extractBody(from request: String) -> Data? {
         requestBodyData(from: request)
     }
 
-    private func parseHeaders(from lines: [String]) -> [String: String] {
+    func parseHeaders(from lines: [String]) -> [String: String] {
         var headers: [String: String] = [:]
 
         for line in lines.dropFirst() {
@@ -2499,7 +2499,7 @@ final class ServerManager {
         return headers
     }
 
-    private func requestLengthIfComplete(in data: Data) -> Int? {
+    func requestLengthIfComplete(in data: Data) -> Int? {
         guard let headerRange = data.range(of: Data("\r\n\r\n".utf8)) else {
             return nil
         }
@@ -2516,7 +2516,7 @@ final class ServerManager {
         return totalLength
     }
 
-    private func parseContentLength(from headerData: Data) -> Int? {
+    func parseContentLength(from headerData: Data) -> Int? {
         guard let headerString = String(data: headerData, encoding: .utf8) else {
             return nil
         }
@@ -2533,7 +2533,7 @@ final class ServerManager {
         return nil
     }
 
-    private func HTTPStatusText(_ code: Int) -> String {
+    func HTTPStatusText(_ code: Int) -> String {
         switch code {
         case 200: return "OK"
         case 204: return "No Content"
@@ -2547,7 +2547,7 @@ final class ServerManager {
         }
     }
 
-    private func httpStatus(for error: Error) -> Int {
+    func httpStatus(for error: Error) -> Int {
         let nsError = error as NSError
         switch nsError.code {
         case 400, 401, 403, 404, 501:
@@ -2557,7 +2557,7 @@ final class ServerManager {
         }
     }
 
-    private func openAIErrorType(for status: Int) -> String {
+    func openAIErrorType(for status: Int) -> String {
         switch status {
         case 401:
             return "authentication_error"
@@ -2593,4 +2593,5 @@ private extension NSLock {
         defer { unlock() }
         return try body()
     }
+}
 }
