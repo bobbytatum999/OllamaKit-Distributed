@@ -54,15 +54,6 @@ struct ChatView: View {
         ZStack {
             AnimatedMeshBackground()
             
-            VStack(spacing: 0) {
-                messagesList
-                    session: session,
-                    isGenerating: viewModel.isGenerating,
-                    tokensPerSecond: viewModel.tokensPerSecond,
-                    streamRevision: viewModel.streamRevision,
-                    onBranch: branchFromHere,
-                    bottomID: bottomID
-                )
                 
                 chatInputArea
             }
