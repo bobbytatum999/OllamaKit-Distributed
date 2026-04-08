@@ -2005,11 +2005,11 @@ struct FeaturedModelsSection: View {
     @State private var showingTooltip = false
 
     private let featuredModels: [FeaturedModelInfo] = [
-        FeaturedModelInfo(id: "llama3.2:1b", displayName: "Llama 3.2 1B", size: "1.3 GB", description: "Ultra-fast, great for everyday tasks"),
-        FeaturedModelInfo(id: "llama3.2:3b", displayName: "Llama 3.2 3B", size: "2.0 GB", description: "Balanced speed and quality"),
-        FeaturedModelInfo(id: "qwen2.5:1.5b", displayName: "Qwen 2.5 1.5B", size: "1.0 GB", description: "Excellent multilingual support"),
-        FeaturedModelInfo(id: "phi3:mini", displayName: "Phi-3 Mini", size: "2.3 GB", description: "Strong reasoning in a small package"),
-        FeaturedModelInfo(id: "mistral:7b", displayName: "Mistral 7B", size: "4.4 GB", description: "Popular open-source model"),
+        FeaturedModelInfo(id: "NousResearch/Meta-Llama-3.2-1B-Instruct-GGUF", displayName: "Llama 3.2 1B", size: "1.3 GB", description: "Ultra-fast, great for everyday tasks"),
+        FeaturedModelInfo(id: "NousResearch/Meta-Llama-3.2-3B-Instruct-GGUF", displayName: "Llama 3.2 3B", size: "2.0 GB", description: "Balanced speed and quality"),
+        FeaturedModelInfo(id: "Qwen/Qwen2.5-1.5B-Instruct-GGUF", displayName: "Qwen 2.5 1.5B", size: "1.0 GB", description: "Excellent multilingual support"),
+        FeaturedModelInfo(id: "microsoft/Phi-3.5-mini-instruct-GGUF", displayName: "Phi-3.5 Mini", size: "2.3 GB", description: "Strong reasoning in a small package"),
+        FeaturedModelInfo(id: "mistralai/Mistral-7B-Instruct-v0.3-GGUF", displayName: "Mistral 7B", size: "4.4 GB", description: "Popular open-source model"),
     ]
 
     var body: some View {
@@ -2098,6 +2098,7 @@ struct FeaturedModelCard: View {
     @StateObject private var searchVM = ModelSearchViewModel()
     @State private var isDownloading = false
     @State private var downloadProgress = 0
+    @State private var downloadError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -2148,6 +2149,23 @@ struct FeaturedModelCard: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
+            } else if let error = downloadError {
+                VStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                    Text(error)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") {
+                        downloadError = nil
+                        downloadModel()
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .controlSize(.small)
+                }
             } else {
                 Button {
                     downloadModel()
@@ -2175,6 +2193,7 @@ struct FeaturedModelCard: View {
     private func downloadModel() {
         isDownloading = true
         downloadProgress = 0
+        downloadError = nil
 
         Task { @MainActor in
             do {
@@ -2211,8 +2230,12 @@ struct FeaturedModelCard: View {
                 await ModelStorage.shared.upsertDownloadedModel(seed)
 
                 HapticManager.notification(.success)
+                downloadError = nil
             } catch {
                 HapticManager.notification(.error)
+                // Show the error so the user knows what went wrong
+                let msg = error.localizedDescription
+                downloadError = msg.count > 40 ? String(msg.prefix(40)) + "…" : msg
             }
 
             isDownloading = false

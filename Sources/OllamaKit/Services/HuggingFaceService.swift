@@ -626,6 +626,11 @@ struct ModelInfo: Sendable {
 // MARK: - Background Download Session Delegate
 
 /// Lives outside any actor so URLSession's delegate queue can call it safely.
+/// IMPORTANT: This delegate must be kept alive for background URL sessions to work.
+/// iOS calls this delegate even when the app has been terminated and relaunched
+/// in the background. The delegate must call the background completion handler
+/// (from AppDelegate.application(handleEventsForBackgroundURLSession:)) once all
+/// events have been delivered, or iOS may kill the app.
 final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     static let shared = DownloadSessionDelegate()
 
@@ -634,14 +639,15 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
     private var progressHandlers: [String: @Sendable (DownloadProgress) -> Void] = [:]
     private var tasks: [String: URLSessionDownloadTask] = [:]
     private var startTimes: [String: Date] = [:]
-
-    // URLSessionDownloadDelegate methods are called on the delegate queue (nil = system default)
-    // but we still guard with locks for thread safety.
+    private var backgroundCompletionHandler: (() -> Void)?
 
     func storeContinuation(_ cont: CheckedContinuation<(URL, URLResponse), Error>, for id: String) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         continuations[id] = cont
-        startTimes[id] = Date()
+        if startTimes[id] == nil {
+            startTimes[id] = Date()
+        }
+        lock.unlock()
     }
 
     func storeProgressHandler(_ handler: @escaping @Sendable (DownloadProgress) -> Void, for id: String) {
@@ -661,6 +667,28 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         task?.cancel()
     }
 
+    func storeBackgroundCompletionHandler(_ handler: @escaping () -> Void) {
+        lock.lock()
+        backgroundCompletionHandler = handler
+        lock.unlock()
+
+        // If we already have events in flight, trigger them
+        lock.lock()
+        let hasActiveTasks = !tasks.isEmpty
+        lock.unlock()
+
+        if !hasActiveTasks {
+            // No pending tasks — can call handler immediately
+            DispatchQueue.main.async {
+                self.lock.lock()
+                let handler = self.backgroundCompletionHandler
+                self.backgroundCompletionHandler = nil
+                self.lock.unlock()
+                handler?()
+            }
+        }
+    }
+
     // MARK: - URLSessionDownloadDelegate
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
@@ -673,12 +701,31 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         startTimes.removeValue(forKey: taskId)
         lock.unlock()
 
-        // Return the temp file URL — caller moves it to final destination
-        continuation?.resume(returning: (location, downloadTask.response!))
+        if let cont = continuation {
+            // Return the temp file URL — caller moves it to final destination
+            cont.resume(returning: (location, downloadTask.response!))
+        }
+        // If no continuation (app was killed and restarted), the downloaded file
+        // is still at `location` — move it via session.getTasksWithCompletionHandler
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let taskId = task.taskDescription, error != nil else { return }
+        guard let taskId = task.taskDescription else { return }
+
+        // Only handle real errors, not cancellation (didFinishDownloading handles success)
+        guard let error = error else { return }
+
+        // Check if this is a cancellation
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+            lock.lock()
+            continuations.removeValue(forKey: taskId)
+            progressHandlers.removeValue(forKey: taskId)
+            tasks.removeValue(forKey: taskId)
+            startTimes.removeValue(forKey: taskId)
+            lock.unlock()
+            return
+        }
 
         lock.lock()
         let continuation = continuations.removeValue(forKey: taskId)
@@ -687,9 +734,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         startTimes.removeValue(forKey: taskId)
         lock.unlock()
 
-        // Don't resume if already resumed via didFinishDownloadingTo
         if let cont = continuation {
-            cont.resume(throwing: error ?? URLError(.unknown))
+            cont.resume(throwing: error)
         }
     }
 
@@ -702,18 +748,21 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
     ) {
         guard let taskId = downloadTask.taskDescription else { return }
 
-        let totalBytes = max(totalBytesExpectedToWrite, 0)
+        // totalBytesExpectedToWrite can be -1 if the server didn't send a Content-Length
+        // (especially for HuggingFace CDN on certain files)
+        let totalBytes = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : 0
         let downloadedBytes = max(totalBytesWritten, 0)
-        let normalizedProgress: Double
 
+        let normalizedProgress: Double
         if totalBytes > 0 {
             normalizedProgress = min(max(Double(downloadedBytes) / Double(totalBytes), 0), 1)
         } else {
-            normalizedProgress = 0
+            // No Content-Length: fake initial progress so UI doesn't show 0%
+            normalizedProgress = min(Double(downloadedBytes) / (100 * 1024 * 1024), 0.99)
         }
 
         let elapsed = lock.withLock { startTimes[taskId].map { max(Date().timeIntervalSince($0), 0.001) } ?? 0.001 }
-        let speed = Double(downloadedBytes) / elapsed
+        let speed = elapsed > 0 ? Double(downloadedBytes) / elapsed : 0
 
         lock.lock()
         let handler = progressHandlers[taskId]
@@ -731,6 +780,18 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
     }
 
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        // Called when all background events are delivered — useful for app relaunch scenarios
+        // Called when ALL background events (for ALL tasks) have been delivered.
+        // This is our signal to call the background completion handler so iOS
+        // knows we handled everything and can stop suspending the app.
+        lock.lock()
+        let handler = backgroundCompletionHandler
+        backgroundCompletionHandler = nil
+        lock.unlock()
+
+        if let handler = handler {
+            DispatchQueue.main.async {
+                handler()
+            }
+        }
     }
 }
