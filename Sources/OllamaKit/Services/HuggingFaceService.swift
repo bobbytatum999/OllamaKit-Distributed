@@ -342,7 +342,7 @@ final class HuggingFaceService: @unchecked Sendable {
             $0.modelId.caseInsensitiveCompare(trimmedName) == .orderedSame
                 || $0.displayName.caseInsensitiveCompare(trimmedName) == .orderedSame
         }
-        let rankedResults = exactMatches + detailedResults.filter { !exactMatches.contains(where: { $0.modelId == $1.modelId }) }
+        let rankedResults = exactMatches + detailedResults.filter { candidate in !exactMatches.contains(where: { $0.modelId == candidate.modelId }) }
 
         var candidates: [HuggingFaceCandidate] = []
         for result in rankedResults {

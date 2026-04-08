@@ -2187,7 +2187,7 @@ struct FeaturedModelCard: View {
                 )
 
                 // Real download with progress
-                let _ = try await HuggingFaceService.shared.downloadModel(
+                let downloaded = try await HuggingFaceService.shared.downloadModel(
                     from: candidate.file.url,
                     filename: candidate.file.filename,
                     modelId: candidate.model.modelId
@@ -2197,10 +2197,18 @@ struct FeaturedModelCard: View {
                     }
                 }
 
-                // Upsert into storage
-                if let snapshot = ModelStorage.shared.snapshot(name: candidate.model.modelId) {
-                    await ModelStorage.shared.upsertDownloadedModel(snapshot.registrySeed)
-                }
+                // Upsert into storage with correct local path from the download result
+                let seed = DownloadedModelSeed(
+                    modelId: candidate.model.modelId,
+                    name: downloaded.name,
+                    localPath: downloaded.localPath,
+                    size: downloaded.size,
+                    quantization: downloaded.quantization,
+                    parameters: downloaded.parameters,
+                    contextLength: downloaded.contextLength,
+                    serverCapabilities: nil
+                )
+                await ModelStorage.shared.upsertDownloadedModel(seed)
 
                 HapticManager.notification(.success)
             } catch {

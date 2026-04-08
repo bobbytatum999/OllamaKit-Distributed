@@ -48,7 +48,7 @@ final class ServerManager: @unchecked Sendable {
         isStarting = true
         stateLock.unlock()
 
-        log(.connection, level: .info, title: "Starting Server", message: "Initializing network listener on port 11434...")
+        log(category: .app, level: .info, title: "Starting Server", message: "Initializing network listener on port 11434...")
 
         do {
             let port = NWEndpoint.Port(rawValue: 11434)!
@@ -57,8 +57,6 @@ final class ServerManager: @unchecked Sendable {
 
             let listener = try NWListener(using: parameters, on: port)
 
-            // Use a separate handler to avoid the race condition:
-            // Store the state update handler before starting
             var pendingContinuation: CheckedContinuation<Void, Never>?
 
             listener.stateUpdateHandler = { [weak self] state in
@@ -71,19 +69,19 @@ final class ServerManager: @unchecked Sendable {
                     self.stateLock.unlock()
                     pendingContinuation?.resume()
                     pendingContinuation = nil
-                    self.log(.connection, level: .info, title: "Server Ready", message: "Listening on port \(port.rawValue)")
+                    self.log(category: .app, level: .info, title: "Server Ready", message: "Listening on port \(port.rawValue)")
 
                 case .failed(let error):
                     self.stateLock.lock()
                     self.isStarting = false
                     self.stateLock.unlock()
-                    self.log(.connection, level: .error, title: "Listener Failed", message: error.localizedDescription)
+                    self.log(category: .app, level: .error, title: "Listener Failed", message: error.localizedDescription)
                     pendingContinuation?.resume()
                     pendingContinuation = nil
                     Task { await self.stopServer() }
 
                 case .cancelled:
-                    self.log(.connection, level: .info, title: "Listener Cancelled", message: "Server shutdown complete.")
+                    self.log(category: .app, level: .info, title: "Listener Cancelled", message: "Server shutdown complete.")
 
                 default:
                     break
@@ -96,7 +94,6 @@ final class ServerManager: @unchecked Sendable {
 
             self.listener = listener
 
-            // Set continuation BEFORE starting the listener to avoid race
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 pendingContinuation = continuation
                 listener.start(queue: queue)
@@ -106,7 +103,7 @@ final class ServerManager: @unchecked Sendable {
             stateLock.lock()
             isStarting = false
             stateLock.unlock()
-            log(.connection, level: .error, title: "Startup Failed", message: error.localizedDescription)
+            log(category: .app, level: .error, title: "Startup Failed", message: error.localizedDescription)
         }
     }
 
@@ -128,7 +125,7 @@ final class ServerManager: @unchecked Sendable {
             connection.cancel()
         }
 
-        log(.connection, level: .info, title: "Server Stopped", message: "All connections closed.")
+        log(category: .app, level: .info, title: "Server Stopped", message: "All connections closed.")
     }
 
     func startServerIfEnabled() async {
@@ -143,7 +140,7 @@ final class ServerManager: @unchecked Sendable {
 
         if wasRunning {
             await stopServer()
-            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms settle
+            try? await Task.sleep(nanoseconds: 500_000_000)
             await startServer()
         }
     }
@@ -157,9 +154,8 @@ final class ServerManager: @unchecked Sendable {
     private func handleNewConnection(_ connection: NWConnection) {
         let id = ObjectIdentifier(connection)
 
-        // Security check before accepting
         guard allowsConnection(connection) else {
-            log(.auth, level: .warning, title: "Connection Rejected", message: "Blocked by security policy", metadata: ["remote": remoteAddress(for: connection)])
+            log(category: .app, level: .warning, title: "Connection Rejected", message: "Blocked by security policy", metadata: ["remote": remoteAddress(for: connection)])
             connection.cancel()
             return
         }
@@ -171,7 +167,7 @@ final class ServerManager: @unchecked Sendable {
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .failed(let error):
-                self?.log(.connection, level: .error, title: "Connection Failed", message: error.localizedDescription, metadata: ["remote": self?.remoteAddress(for: connection) ?? "unknown"])
+                self?.log(category: .app, level: .error, title: "Connection Failed", message: error.localizedDescription, metadata: ["remote": self?.remoteAddress(for: connection) ?? "unknown"])
                 self?.cleanupConnection(id)
             case .cancelled:
                 self?.cleanupConnection(id)
@@ -192,21 +188,21 @@ final class ServerManager: @unchecked Sendable {
 
     private func allowsConnection(_ connection: NWConnection) -> Bool {
         guard AppSettings.shared.serverExposureMode != .localOnly else {
-            // localOnly: only allow loopback
-            guard let host = connection.currentPath?.remoteEndpoint?.getHost() else { return false }
-            return isLoopback(host)
+            guard let endpoint = connection.currentPath?.remoteEndpoint else { return false }
+            return isLoopbackHost(endpoint)
         }
-        // localNetwork and public modes allow all connections
-        // (public modes have API key enforcement at the HTTP level)
         return true
     }
 
-    private func isLoopback(_ host: NWEndpoint.Host) -> Bool {
-        switch host {
-        case .ipv4(let addr): return addr == .loopback
-        case .ipv6(let addr): return addr == .loopback
-        default: return false
+    private func isLoopbackHost(_ endpoint: NWEndpoint) -> Bool {
+        if case .hostPort(let host, _) = endpoint {
+            switch host {
+            case .ipv4(let addr): return addr == .loopback
+            case .ipv6(let addr): return addr == .loopback
+            default: return false
+            }
         }
+        return false
     }
 
     // MARK: - HTTP Request Loop
@@ -216,7 +212,7 @@ final class ServerManager: @unchecked Sendable {
             guard let self = self else { return }
 
             if let error = error {
-                self.log(.connection, level: .error, title: "Receive Error", message: error.localizedDescription)
+                self.log(category: .app, level: .error, title: "Receive Error", message: error.localizedDescription)
                 connection.cancel()
                 return
             }
@@ -228,11 +224,9 @@ final class ServerManager: @unchecked Sendable {
                 return
             }
 
-            // Check if we have a complete HTTP request (headers end with \r\n\r\n)
             if let requestText = String(data: accumulated, encoding: .utf8), requestText.contains("\r\n\r\n") {
                 self.handleHTTPRequest(requestText, on: connection)
             } else if !isComplete {
-                // Need more data
                 self.receiveMore(on: connection, accumulated: accumulated)
             } else {
                 self.sendErrorResponse(status: 400, message: "Bad Request", on: connection)
@@ -244,7 +238,7 @@ final class ServerManager: @unchecked Sendable {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
             guard let self = self else { return }
 
-            if let error = error {
+            if error != nil {
                 connection.cancel()
                 return
             }
@@ -283,7 +277,6 @@ final class ServerManager: @unchecked Sendable {
         let path = parts[1]
         let requestID = String(UUID().uuidString.prefix(8).lowercased())
 
-        // Parse headers for API key and body
         var headers: [String: String] = [:]
         var bodyStartIndex = 0
         for (i, line) in lines.enumerated() {
@@ -298,11 +291,9 @@ final class ServerManager: @unchecked Sendable {
             }
         }
 
-        // Extract body
         var body = ""
         if bodyStartIndex > 0 && bodyStartIndex < lines.count - 1 {
-            let bodyLines = lines[(bodyStartIndex + 1)...]
-            body = bodyLines.joined(separator: "\r\n")
+            body = lines[(bodyStartIndex + 1)...].joined(separator: "\r\n")
         }
 
         let context = ServerRequestContext(
@@ -311,9 +302,8 @@ final class ServerManager: @unchecked Sendable {
             startTime: Date()
         )
 
-        log(.request, level: .info, title: "\(method) \(path)", message: "Processing request...", requestID: requestID, metadata: ["remote": context.remoteAddress ?? "unknown"])
+        log(category: .app, level: .info, title: "\(method) \(path)", message: "Processing request...", metadata: ["remote": context.remoteAddress ?? "unknown", "request_id": requestID])
 
-        // Check API key for public modes
         if AppSettings.shared.serverExposureMode.isPublic || AppSettings.shared.requireApiKey {
             let providedKey = headers["authorization"]?.replacingOccurrences(of: "Bearer ", with: "").trimmingCharacters(in: .whitespaces)
             if providedKey != AppSettings.shared.apiKey {
@@ -322,7 +312,6 @@ final class ServerManager: @unchecked Sendable {
             }
         }
 
-        // Route
         switch (method, path) {
         case ("GET", "/"), ("GET", "/v1/models"):
             handleOpenAIListModels(on: connection, context: context, requestID: requestID)
@@ -358,7 +347,7 @@ final class ServerManager: @unchecked Sendable {
             handleOpenAIModelInfo(path: path, on: connection, context: context, requestID: requestID)
 
         default:
-            log(.request, level: .warning, title: "Not Found", message: "No route for \(method) \(path)", requestID: requestID)
+            log(category: .app, level: .warning, title: "Not Found", message: "No route for \(method) \(path)", metadata: ["request_id": requestID])
             sendErrorResponse(status: 404, message: "Not Found", on: connection, requestID: requestID)
         }
     }
@@ -368,15 +357,14 @@ final class ServerManager: @unchecked Sendable {
     private func handleOpenAIListModels(on connection: NWConnection, context: ServerRequestContext, requestID: String) {
         Task {
             let models = await serverModels()
-
             let openAIModels = models.map { model -> [String: Any] in
                 [
                     "id": model.catalogId,
                     "object": "model",
-                    "created": Int(model.createdAt.timeIntervalSince1970),
+                    "created": Int(model.downloadDate.timeIntervalSince1970),
                     "owned_by": "ollamakit",
                     "permission": [],
-                    "root": model.catalogId,
+                    "root": model.catalogId
                 ]
             }
 
@@ -401,10 +389,10 @@ final class ServerManager: @unchecked Sendable {
             let response: [String: Any] = [
                 "id": model.catalogId,
                 "object": "model",
-                "created": Int(model.createdAt.timeIntervalSince1970),
+                "created": Int(model.downloadDate.timeIntervalSince1970),
                 "owned_by": "ollamakit",
                 "permission": [],
-                "root": model.catalogId,
+                "root": model.catalogId
             ]
 
             await sendJSONResponse(response, status: 200, on: connection, requestID: requestID)
@@ -431,7 +419,6 @@ final class ServerManager: @unchecked Sendable {
             return
         }
 
-        // Extract system prompt
         var systemPrompt: String?
         var conversationTurns: [ConversationTurn] = []
 
@@ -452,6 +439,9 @@ final class ServerManager: @unchecked Sendable {
         let params = SamplingParameters(
             temperature: temperature,
             topP: topP,
+            topK: 40,
+            repeatPenalty: 1.1,
+            repeatLastN: 64,
             maxTokens: maxTokens,
             stopSequences: stop ?? []
         )
@@ -471,7 +461,15 @@ final class ServerManager: @unchecked Sendable {
                     prompt: "",
                     systemPrompt: systemPrompt,
                     conversationTurns: turns,
-                    parameters: .init(temperature: parameters.temperature, topP: parameters.topP, maxTokens: parameters.maxTokens, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, stopSequences: parameters.stopSequences),
+                    parameters: SamplingParameters(
+                        temperature: parameters.temperature,
+                        topP: parameters.topP,
+                        topK: parameters.topK,
+                        repeatPenalty: parameters.repeatPenalty,
+                        repeatLastN: parameters.repeatLastN,
+                        maxTokens: parameters.maxTokens,
+                        stopSequences: parameters.stopSequences
+                    ),
                     onToken: { token in
                         fullText += token
                     }
@@ -507,21 +505,16 @@ final class ServerManager: @unchecked Sendable {
     }
 
     private func handleStreamingChat(modelId: String, systemPrompt: String?, turns: [ConversationTurn], parameters: SamplingParameters, on connection: NWConnection, context: ServerRequestContext, requestID: String) {
-        // SSE streaming response
         let completionId = "chatcmpl-\(UUID().uuidString.prefix(8))"
         let created = Int(Date().timeIntervalSince1970)
-        var accumulatedText = ""
 
         func sendSSEEvent(_ data: [String: Any]) {
             guard let jsonData = try? JSONSerialization.data(withJSONObject: data),
                   let jsonString = String(data: jsonData, encoding: .utf8) else { return }
             let sse = "data: \(jsonString)\n\n"
-            if let sseData = sse.data(using: .utf8) {
-                connection.send(content: sseData, completion: .idempotent)
-            }
+            connection.send(content: sse.data(using: .utf8), completion: .idempotent)
         }
 
-        // Send SSE headers
         let headers = [
             "HTTP/1.1 200 OK",
             "Content-Type: text/event-stream",
@@ -531,11 +524,7 @@ final class ServerManager: @unchecked Sendable {
             "\r\n"
         ].joined(separator: "\r\n")
 
-        if let headerData = headers.data(using: .utf8) {
-            connection.send(content: headerData, completion: .contentProcessed { _ in
-                // headers sent
-            })
-        }
+        connection.send(content: headers.data(using: .utf8), completion: .contentProcessed { _ in })
 
         Task {
             do {
@@ -543,9 +532,8 @@ final class ServerManager: @unchecked Sendable {
                     prompt: "",
                     systemPrompt: systemPrompt,
                     conversationTurns: turns,
-                    parameters: .init(temperature: parameters.temperature, topP: parameters.topP, maxTokens: parameters.maxTokens, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, stopSequences: parameters.stopSequences),
+                    parameters: parameters,
                     onToken: { token in
-                        accumulatedText += token
                         let delta: [String: Any] = [
                             "id": completionId,
                             "object": "chat.completion.chunk",
@@ -568,9 +556,7 @@ final class ServerManager: @unchecked Sendable {
                     "object": "chat.completion.chunk",
                     "created": created,
                     "model": modelId,
-                    "choices": [
-                        ["index": 0, "delta": [:], "finish_reason": "stop"]
-                    ]
+                    "choices": [["index": 0, "delta": [:], "finish_reason": "stop"]]
                 ]
                 sendSSEEvent(finalChunk)
                 connection.send(content: "data: [DONE]\n\n".data(using: .utf8), completion: .contentProcessed { [weak self] _ in
@@ -610,7 +596,7 @@ final class ServerManager: @unchecked Sendable {
                 var fullText = ""
                 _ = try await ModelRunner.shared.generate(
                     prompt: prompt,
-                    parameters: .init(temperature: temperature, topP: 0.9, maxTokens: maxTokens, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, stopSequences: []),
+                    parameters: SamplingParameters(temperature: temperature, topP: 0.9, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, maxTokens: maxTokens, stopSequences: []),
                     onToken: { token in
                         fullText += token
                     }
@@ -621,9 +607,7 @@ final class ServerManager: @unchecked Sendable {
                     "object": "text_completion",
                     "created": Int(Date().timeIntervalSince1970),
                     "model": modelId,
-                    "choices": [
-                        ["text": fullText, "index": 0, "finish_reason": "stop"]
-                    ],
+                    "choices": [["text": fullText, "index": 0, "finish_reason": "stop"]],
                     "usage": ["prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0]
                 ]
 
@@ -644,24 +628,19 @@ final class ServerManager: @unchecked Sendable {
             "\r\n"
         ].joined(separator: "\r\n")
 
-        if let headerData = headers.data(using: .utf8) {
-            connection.send(content: headerData, completion: .contentProcessed { _ in })
-        }
+        connection.send(content: headers.data(using: .utf8), completion: .contentProcessed { _ in })
 
-        var accumulated = ""
-
-        func sendSSE(_ text: String, index: Int = 0) {
+        func sendSSE(_ text: String) {
             let chunk: [String: Any] = [
                 "id": "cmpl-\(UUID().uuidString.prefix(8))",
                 "object": "text_completion",
                 "created": Int(Date().timeIntervalSince1970),
                 "model": modelId,
-                "choices": [["text": text, "index": index, "finish_reason": NSNull()]]
+                "choices": [["text": text, "index": 0, "finish_reason": NSNull()]]
             ]
             if let jsonData = try? JSONSerialization.data(withJSONObject: chunk),
                let jsonString = String(data: jsonData, encoding: .utf8) {
-                let sse = "data: \(jsonString)\n\n"
-                connection.send(content: sse.data(using: .utf8), completion: .idempotent)
+                connection.send(content: "data: \(jsonString)\n\n".data(using: .utf8), completion: .idempotent)
             }
         }
 
@@ -669,9 +648,8 @@ final class ServerManager: @unchecked Sendable {
             do {
                 _ = try await ModelRunner.shared.generate(
                     prompt: prompt,
-                    parameters: .init(temperature: temperature, topP: 0.9, maxTokens: maxTokens, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, stopSequences: []),
+                    parameters: SamplingParameters(temperature: temperature, topP: 0.9, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, maxTokens: maxTokens, stopSequences: []),
                     onToken: { token in
-                        accumulated += token
                         sendSSE(token)
                     }
                 )
@@ -686,7 +664,6 @@ final class ServerManager: @unchecked Sendable {
     }
 
     private func handleOpenAIEmbeddings(request body: String, on connection: NWConnection, context: ServerRequestContext, requestID: String) {
-        // Embeddings not supported — return empty
         let response: [String: Any] = [
             "object": "list",
             "data": [],
@@ -720,10 +697,7 @@ final class ServerManager: @unchecked Sendable {
                 ]
             }
 
-            let response: [String: Any] = [
-                "models": modelsList
-            ]
-
+            let response: [String: Any] = ["models": modelsList]
             await sendJSONResponse(response, status: 200, on: connection, requestID: requestID)
         }
     }
@@ -791,7 +765,7 @@ final class ServerManager: @unchecked Sendable {
                 let result = try await ModelRunner.shared.generate(
                     prompt: prompt,
                     systemPrompt: systemPrompt,
-                    parameters: .init(temperature: temperature, topP: 0.9, maxTokens: maxTokens, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, stopSequences: []),
+                    parameters: SamplingParameters(temperature: temperature, topP: 0.9, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, maxTokens: maxTokens, stopSequences: []),
                     onToken: { token in
                         fullText += token
                     }
@@ -825,17 +799,12 @@ final class ServerManager: @unchecked Sendable {
             "\r\n"
         ].joined(separator: "\r\n")
 
-        if let headerData = headers.data(using: .utf8) {
-            connection.send(content: headerData, completion: .contentProcessed { _ in })
-        }
-
-        var accumulated = ""
+        connection.send(content: headers.data(using: .utf8), completion: .contentProcessed { _ in })
 
         func sendSSE(_ data: [String: Any]) {
             if let jsonData = try? JSONSerialization.data(withJSONObject: data),
                let jsonString = String(data: jsonData, encoding: .utf8) {
-                let sse = "data: \(jsonString)\n\n"
-                connection.send(content: sse.data(using: .utf8), completion: .idempotent)
+                connection.send(content: "data: \(jsonString)\n\n".data(using: .utf8), completion: .idempotent)
             }
         }
 
@@ -844,9 +813,8 @@ final class ServerManager: @unchecked Sendable {
                 _ = try await ModelRunner.shared.generate(
                     prompt: prompt,
                     systemPrompt: systemPrompt,
-                    parameters: .init(temperature: temperature, topP: 0.9, maxTokens: maxTokens, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, stopSequences: []),
+                    parameters: SamplingParameters(temperature: temperature, topP: 0.9, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, maxTokens: maxTokens, stopSequences: []),
                     onToken: { token in
-                        accumulated += token
                         let chunk: [String: Any] = [
                             "model": modelId,
                             "response": token,
@@ -895,10 +863,12 @@ final class ServerManager: @unchecked Sendable {
             }
         }
 
+        let params = SamplingParameters(temperature: 0.7, topP: 0.9, topK: 40, repeatPenalty: 1.1, repeatLastN: 64, maxTokens: 1024, stopSequences: [])
+
         if stream {
-            handleStreamingChat(modelId: modelName, systemPrompt: systemPrompt, turns: turns, parameters: SamplingParameters(temperature: 0.7, topP: 0.9, maxTokens: 1024, stopSequences: []), on: connection, context: context, requestID: requestID)
+            handleStreamingChat(modelId: modelName, systemPrompt: systemPrompt, turns: turns, parameters: params, on: connection, context: context, requestID: requestID)
         } else {
-            handleBlockingChat(modelId: modelName, systemPrompt: systemPrompt, turns: turns, parameters: SamplingParameters(temperature: 0.7, topP: 0.9, maxTokens: 1024, stopSequences: []), on: connection, context: context, requestID: requestID)
+            handleBlockingChat(modelId: modelName, systemPrompt: systemPrompt, turns: turns, parameters: params, on: connection, context: context, requestID: requestID)
         }
     }
 
@@ -1012,12 +982,12 @@ final class ServerManager: @unchecked Sendable {
     }
 
     private func logResponse(status: Int, message: String, on connection: NWConnection, requestID: String?) {
-        log(.response, level: status >= 400 ? .error : .info, title: "HTTP \(status)", message: message, requestID: requestID, metadata: ["remote": remoteAddress(for: connection)])
+        log(category: .app, level: status >= 400 ? .error : .info, title: "HTTP \(status)", message: message, metadata: ["remote": remoteAddress(for: connection), "request_id": requestID ?? ""])
     }
 
-    private func log(_ category: ServerLogCategory, level: ServerLogLevel = .info, title: String, message: String, requestID: String? = nil, metadata: [String: String] = [:]) {
+    private func log(category: AppLogCategory, level: AppLogLevel = .info, title: String, message: String, requestID: String? = nil, metadata: [String: String] = [:]) {
         let timestamp = Self.iso8601Formatter.string(from: Date())
-        var logLine = "[\(timestamp)] [Server:\(category.rawValue)] [\(level.rawValue.uppercased())] \(title): \(message)"
+        var logLine = "[\(timestamp)] [Server] [\(level.rawValue.uppercased())] \(title): \(message)"
         if let requestID = requestID {
             logLine += " (Request: \(requestID))"
         }
@@ -1027,7 +997,7 @@ final class ServerManager: @unchecked Sendable {
         print(logLine)
 
         Task { @MainActor in
-            AppLogStore.shared.record(.server, level: level, title: title, message: message, metadata: metadata)
+            AppLogStore.shared.record(category, level: level, title: title, message: message, metadata: metadata)
         }
     }
 
@@ -1039,32 +1009,4 @@ final class ServerManager: @unchecked Sendable {
         default: return "server_error"
         }
     }
-}
-
-// MARK: - Sampling Parameters
-
-struct SamplingParameters: Sendable {
-    let temperature: Double
-    let topP: Double
-    let maxTokens: Int
-    let topK: Int
-    let repeatPenalty: Double
-    let repeatLastN: Int
-    let stopSequences: [String]
-
-    init(temperature: Double = 0.7, topP: Double = 0.9, maxTokens: Int = 1024, topK: Int = 40, repeatPenalty: Double = 1.1, repeatLastN: Int = 64, stopSequences: [String] = []) {
-        self.temperature = temperature
-        self.topP = topP
-        self.maxTokens = maxTokens
-        self.topK = topK
-        self.repeatPenalty = repeatPenalty
-        self.repeatLastN = repeatLastN
-        self.stopSequences = stopSequences
-    }
-}
-
-// MARK: - AppLogStore extension for server logs
-
-extension AppLogCategory {
-    static let server = AppLogCategory(rawValue: "server")
 }
