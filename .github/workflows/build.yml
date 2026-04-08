@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Select Xcode 18+
-        uses: mxcl/setup-xcode@v1
+        uses: https://github.com/mxcl/setup-xcode@v1
         with:
           xcode-version: "18+"
 
