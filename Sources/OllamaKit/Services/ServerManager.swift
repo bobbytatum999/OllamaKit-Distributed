@@ -2,7 +2,7 @@ import Foundation
 import Network
 import OllamaCore
 
-private struct ServerRequestContext: Sendable {
+fileprivate struct ServerRequestContext: Sendable {
     let connectionId: UUID
     let remoteAddress: String?
     let startTime: Date

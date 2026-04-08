@@ -427,14 +427,15 @@ struct ChatView: View {
     }
 
     @MainActor
+    @MainActor
     private func branchFromHere(_ message: ChatMessage) {
         // Mark the current message as a branch point
         message.branchPoint = true
         
         // Create a new session for the branch
         let branchSession = ChatSession(
-            modelId: session.modelId,
             title: session.title + " (branch)",
+            modelId: session.modelId,
             systemPrompt: session.systemPrompt
         )
         branchSession.parentMessageId = message.id

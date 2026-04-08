@@ -52,7 +52,7 @@ struct ContentView: View {
             }
             .tag(4)
         }
-        .tint(.accentColor)
+        .tint(Color.accentColor)
         .preferredColorScheme(settings.darkMode ? .dark : .light)
     }
 }
@@ -79,15 +79,15 @@ struct LiquidGlassModifier: ViewModifier {
                                         .init(x: 0, y: 1), .init(x: 0.5, y: 1), .init(x: 1, y: 1)
                                     ],
                                     colors: [
-                                        .accentColor.opacity(0.1),
-                                        .accentColor.opacity(0.05),
-                                        .accentColor.opacity(0.1),
-                                        .accentColor.opacity(0.05),
-                                        .accentColor.opacity(0.02),
-                                        .accentColor.opacity(0.05),
-                                        .accentColor.opacity(0.1),
-                                        .accentColor.opacity(0.05),
-                                        .accentColor.opacity(0.1)
+                                        Color.accentColor.opacity(0.1),
+                                        Color.accentColor.opacity(0.05),
+                                        Color.accentColor.opacity(0.1),
+                                        Color.accentColor.opacity(0.05),
+                                        Color.accentColor.opacity(0.02),
+                                        Color.accentColor.opacity(0.05),
+                                        Color.accentColor.opacity(0.1),
+                                        Color.accentColor.opacity(0.05),
+                                        Color.accentColor.opacity(0.1)
                                     ]
                                 )
                             )
@@ -98,7 +98,7 @@ struct LiquidGlassModifier: ViewModifier {
                             .fill(.ultraThinMaterial)
                             .overlay(
                                 RoundedRectangle(cornerRadius: radius)
-                                    .fill(.accentColor.opacity(intensity * 0.5))
+                                    .fill(Color.accentColor.opacity(intensity * 0.5))
                             )
                     )
             } else {
@@ -119,15 +119,15 @@ struct LiquidGlassModifier: ViewModifier {
                                             .init(x: 0, y: 1), .init(x: 0.5, y: 1), .init(x: 1, y: 1)
                                         ],
                                         colors: [
-                                            .accentColor.opacity(0.1),
-                                            .accentColor.opacity(0.05),
-                                            .accentColor.opacity(0.1),
-                                            .accentColor.opacity(0.05),
-                                            .accentColor.opacity(0.02),
-                                            .accentColor.opacity(0.05),
-                                            .accentColor.opacity(0.1),
-                                            .accentColor.opacity(0.05),
-                                            .accentColor.opacity(0.1)
+                                            Color.accentColor.opacity(0.1),
+                                            Color.accentColor.opacity(0.05),
+                                            Color.accentColor.opacity(0.1),
+                                            Color.accentColor.opacity(0.05),
+                                            Color.accentColor.opacity(0.02),
+                                            Color.accentColor.opacity(0.05),
+                                            Color.accentColor.opacity(0.1),
+                                            Color.accentColor.opacity(0.05),
+                                            Color.accentColor.opacity(0.1)
                                         ]
                                     )
                                 )
