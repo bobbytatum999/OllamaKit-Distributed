@@ -55,7 +55,7 @@ targets.append(
 let package = Package(
     name: "OllamaKit",
     platforms: [
-        .iOS("18.2"),
+        .iOS("18.4"),
         .macOS("14.0")
     ],
     products: products,
