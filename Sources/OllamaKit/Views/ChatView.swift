@@ -426,6 +426,7 @@ struct ChatView: View {
         }
     }
 
+    @MainActor
     private func branchFromHere(_ message: ChatMessage) {
         // Mark the current message as a branch point
         message.branchPoint = true

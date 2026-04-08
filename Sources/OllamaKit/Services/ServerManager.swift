@@ -2,6 +2,18 @@ import Foundation
 import Network
 import OllamaCore
 
+private struct ServerRequestContext: Sendable {
+    let connectionId: UUID
+    let remoteAddress: String?
+    let startTime: Date
+    
+    init(connectionId: UUID = UUID(), remoteAddress: String? = nil, startTime: Date = Date()) {
+        self.connectionId = connectionId
+        self.remoteAddress = remoteAddress
+        self.startTime = startTime
+    }
+}
+
 final class ServerManager {
     static let shared = ServerManager()
     private static let iso8601Formatter = ISO8601DateFormatter()
@@ -11,7 +23,9 @@ final class ServerManager {
     private let stateLock = NSLock()
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
-    private var isRunning = false
+    private(set) var isRunning = false
+    
+    var isServerRunning: Bool { isRunning }
     private var isStarting = false
     private var startupContinuation: CheckedContinuation<Void, Never>?
 
@@ -74,7 +88,7 @@ final class ServerManager {
         isStarting = true
         stateLock.unlock()
 
-        log(.lifecycle, title: "Starting Server", message: "Initializing network listener...")
+        log(.connection, title: "Starting Server", message: "Initializing network listener...")
 
         let gate = ContinuationGate()
         
@@ -108,14 +122,14 @@ final class ServerManager {
             startupContinuation = nil
             stateLock.unlock()
             
-            log(.lifecycle, title: "Server Ready", message: "Listening on port \(port.rawValue)")
+            log(.connection, title: "Server Ready", message: "Listening on port \(port.rawValue)")
             
         } catch {
             stateLock.lock()
             isStarting = false
             startupContinuation = nil
             stateLock.unlock()
-            log(.lifecycle, level: .error, title: "Startup Failed", message: error.localizedDescription)
+            log(.connection, level: .error, title: "Startup Failed", message: error.localizedDescription)
         }
     }
 
@@ -137,7 +151,7 @@ final class ServerManager {
             connection.cancel()
         }
         
-        log(.lifecycle, title: "Server Stopped", message: "All connections closed.")
+        log(.connection, title: "Server Stopped", message: "All connections closed.")
     }
 
     func restartServerIfRunning() async {
@@ -156,10 +170,10 @@ final class ServerManager {
         case .ready:
             break
         case .failed(let error):
-            log(.lifecycle, level: .error, title: "Listener Failed", message: error.localizedDescription)
+            log(.connection, level: .error, title: "Listener Failed", message: error.localizedDescription)
             Task { await stopServer() }
         case .cancelled:
-            log(.lifecycle, title: "Listener Cancelled", message: "Server shutdown complete.")
+            log(.connection, title: "Listener Cancelled", message: "Server shutdown complete.")
         default:
             break
         }
@@ -177,7 +191,7 @@ final class ServerManager {
             case .ready:
                 self?.receiveHTTPRequest(on: connection)
             case .failed(let error):
-                self?.log(.network, level: .error, title: "Connection Failed", message: error.localizedDescription)
+                self?.log(.connection, level: .error, title: "Connection Failed", message: error.localizedDescription)
                 self?.cleanupConnection(id)
             case .cancelled:
                 self?.cleanupConnection(id)
@@ -220,7 +234,7 @@ final class ServerManager {
             guard let self = self else { return }
             
             if let error = error {
-                self.log(.network, level: .error, title: "Receive Error", message: error.localizedDescription)
+                self.log(.connection, level: .error, title: "Receive Error", message: error.localizedDescription)
                 connection.cancel()
                 return
             }
@@ -263,13 +277,12 @@ final class ServerManager {
         let requestID = UUID().uuidString.prefix(8).lowercased()
         
         let context = ServerRequestContext(
-            requestID: String(requestID),
-            method: method,
-            path: path,
-            remoteAddress: remoteAddress(for: connection)
+            connectionId: UUID(),
+            remoteAddress: remoteAddress(for: connection),
+            startTime: Date()
         )
 
-        log(.request, title: "\(method) \(path)", message: "Processing request...", requestID: context.requestID, metadata: ["remote": context.remoteAddress])
+        log(.request, title: "\(method) \(path)", message: "Processing request...", requestID: String(requestID), metadata: ["remote": context.remoteAddress ?? "unknown"])
 
         // Routing logic
         if path == "/api/tags" || path == "/v1/models" {
@@ -299,8 +312,8 @@ final class ServerManager {
         } else if path == "/api/ps" {
             handleRunningModels(on: connection, context: context)
         } else {
-            log(.request, level: .warning, title: "Not Found", message: "No route for \(path)", requestID: context.requestID)
-            sendErrorResponse(status: 404, message: "Not Found", on: connection, context: context)
+            log(.request, level: .warning, title: "Not Found", message: "No route for \(path)", requestID: String(requestID))
+            sendErrorResponse(status: 404, message: "Not Found", on: connection, requestID: String(requestID))
         }
     }
 
@@ -379,7 +392,7 @@ final class ServerManager {
         status: Int,
         message: String,
         on connection: NWConnection,
-        context: ServerRequestContext? = nil
+        requestID: String? = nil
     ) {
         let response = """
         HTTP/1.1 \(status) \(message)\r
@@ -390,7 +403,7 @@ final class ServerManager {
         """
         
         connection.send(content: response.data(using: .utf8), completion: .contentProcessed { [weak self] _ in
-            self?.logResponse(status: status, message: message, on: connection, requestID: context?.requestID)
+            self?.logResponse(status: status, message: message, on: connection, requestID: requestID)
             connection.cancel()
         })
     }
@@ -433,13 +446,5 @@ private final class ContinuationGate: @unchecked Sendable {
 
         guard shouldResume else { return }
         continuation.resume()
-    }
-}
-
-extension NSLock {
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
     }
 }

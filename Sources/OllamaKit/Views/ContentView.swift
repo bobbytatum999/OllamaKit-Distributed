@@ -93,7 +93,14 @@ struct LiquidGlassModifier: ViewModifier {
                             )
                             .opacity(intensity)
                     )
-                    .glassEffect(.regular.tint(.accentColor.opacity(intensity)), in: .rect(cornerRadius: radius))
+                    .background(
+                        RoundedRectangle(cornerRadius: radius)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: radius)
+                                    .fill(.accentColor.opacity(intensity * 0.5))
+                            )
+                    )
             } else {
                 content
                     .background(

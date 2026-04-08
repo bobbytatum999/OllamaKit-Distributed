@@ -80,6 +80,8 @@ enum ServerLogCategory: String, CaseIterable, Identifiable, Codable, Sendable {
     case response
     case health
     case relay
+    case lifecycle
+    case network
     case error
 
     var id: String { rawValue }
@@ -648,6 +650,7 @@ final class ChatSession {
     var systemPrompt: String
     var createdAt: Date
     var updatedAt: Date
+    var parentMessageId: UUID?
 
     @Relationship(deleteRule: .cascade, inverse: \ChatMessage.session)
     var messages: [ChatMessage]?
@@ -658,7 +661,8 @@ final class ChatSession {
         systemPrompt: String = "You are a helpful assistant.",
         createdAt: Date = .now,
         updatedAt: Date = .now,
-        messages: [ChatMessage]? = []
+        messages: [ChatMessage]? = [],
+        parentMessageId: UUID? = nil
     ) {
         self.id = UUID()
         self.title = title ?? "New Chat"
@@ -667,6 +671,7 @@ final class ChatSession {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.messages = messages
+        self.parentMessageId = parentMessageId
     }
 
     var orderedMessages: [ChatMessage] {

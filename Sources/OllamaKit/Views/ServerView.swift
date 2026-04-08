@@ -79,11 +79,6 @@ struct ServerView: View {
                 await viewModel.refreshPublicHealth()
             }
         }
-        .onChange(of: relay.state) {
-            Task {
-                await viewModel.refreshPublicHealth()
-            }
-        }
     }
 }
 

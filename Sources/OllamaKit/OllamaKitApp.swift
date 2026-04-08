@@ -251,21 +251,24 @@ struct OnboardingView: View {
                 OnboardingPage(
                     icon: "cpu",
                     title: "Welcome to OllamaKit",
-                    subtitle: "Run local AI models directly on your iPhone"
+                    subtitle: "Run local AI models directly on your iPhone",
+                    selectedModel: $selectedOnboardingModel
                 )
                 .tag(0)
 
                 OnboardingPage(
                     icon: "arrow.down.circle",
                     title: "Download Models",
-                    subtitle: "Browse thousands of GGUF models from HuggingFace. Downloads stay on your device."
+                    subtitle: "Browse thousands of GGUF models from HuggingFace. Downloads stay on your device.",
+                    selectedModel: $selectedOnboardingModel
                 )
                 .tag(1)
 
                 OnboardingPage(
                     icon: "server.rack",
                     title: "API Server",
-                    subtitle: "Expose a local API server and use OllamaKit as a backend for any app"
+                    subtitle: "Expose a local API server and use OllamaKit as a backend for any app",
+                    selectedModel: $selectedOnboardingModel
                 )
                 .tag(2)
 
@@ -278,6 +281,7 @@ struct OnboardingView: View {
                         selectedOnboardingModel = modelId
                     },
                     recommendedModels: recommendedModels,
+                    selectedModel: $selectedOnboardingModel
                     selectedModel: $selectedOnboardingModel
                 )
                 .tag(3)

@@ -264,14 +264,6 @@ private struct BackendConfiguration: Equatable {
     let mlockEnabled: Bool
 }
 
-private extension NSLock {
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
-    }
-}
-
 #if canImport(llama)
 private final class BackendEngine {
     private static let backendInitLock = NSLock()

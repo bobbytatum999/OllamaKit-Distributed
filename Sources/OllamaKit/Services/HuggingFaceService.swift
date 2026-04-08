@@ -783,14 +783,6 @@ final class HuggingFaceService: @unchecked Sendable {
     }
 }
 
-private extension NSLock {
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
-    }
-}
-
 struct DownloadProgress {
     let totalBytes: Int64
     let downloadedBytes: Int64

@@ -2183,7 +2183,7 @@ struct FeaturedModelCard: View {
             if let firstResult = results?.first {
                 // Get the recommended file
                 let files = try? await HuggingFaceService.shared.getModelFiles(modelId: firstResult.modelId)
-                if let recommendedFile = files?.first(where: { $0.filename?.contains("Q4") == true }) ?? files?.first {
+                if let recommendedFile = files?.first(where: { $0.filename.contains("Q4") }) ?? files?.first {
                     // Simulate download progress
                     for i in 1...10 {
                         try? await Task.sleep(nanoseconds: 500_000_000)
