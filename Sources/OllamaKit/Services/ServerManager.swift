@@ -2162,7 +2162,7 @@ final class ServerManager {
             || role.caseInsensitiveCompare("developer") == .orderedSame
     }
 
-    private enum ParameterAPIStyle {
+    enum ParameterAPIStyle {
         case ollama
         case openAI
     }
@@ -2587,7 +2587,7 @@ private final class ContinuationGate: @unchecked Sendable {
     }
 }
 
-private extension NSLock {
+extension NSLock {
     func withLock<T>(_ body: () throws -> T) rethrows -> T {
         lock()
         defer { unlock() }
