@@ -2176,34 +2176,38 @@ struct FeaturedModelCard: View {
         isDownloading = true
         downloadProgress = 0
 
-        Task {
-            // Trigger a search for this model to get GGUF files
-            let results = try? await HuggingFaceService.shared.searchModelsDetailed(query: model.id)
+        Task { @MainActor in
+            do {
+                // Resolve the GGUF candidate for this featured model
+                let runtimeProfile = await DeviceCapabilityService.shared.currentRuntimeProfile()
+                let candidate = try await HuggingFaceService.shared.resolvePullCandidate(
+                    requestedName: model.id,
+                    requestedFilename: nil,
+                    runtimeProfile: runtimeProfile
+                )
 
-            if let firstResult = results?.first {
-                // Get the recommended file
-                let files = try? await HuggingFaceService.shared.getModelFiles(modelId: firstResult.modelId)
-                if let recommendedFile = files?.first(where: { $0.filename.contains("Q4") }) ?? files?.first {
-                    // Simulate download progress
-                    for i in 1...10 {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        await MainActor.run {
-                            downloadProgress = i * 10
-                        }
+                // Real download with progress
+                let _ = try await HuggingFaceService.shared.downloadModel(
+                    from: candidate.file.url,
+                    filename: candidate.file.filename,
+                    modelId: candidate.model.modelId
+                ) { progress in
+                    Task { @MainActor in
+                        self.downloadProgress = progress.percentage
                     }
-                    // Note: Full download implementation would call HuggingFaceService.downloadModel
-                    await MainActor.run {
-                        isDownloading = false
-                        HapticManager.notification(.success)
-                    }
-                    return
                 }
-            }
 
-            await MainActor.run {
-                isDownloading = false
+                // Upsert into storage
+                if let snapshot = ModelStorage.shared.snapshot(name: candidate.model.modelId) {
+                    await ModelStorage.shared.upsertDownloadedModel(snapshot.registrySeed)
+                }
+
+                HapticManager.notification(.success)
+            } catch {
                 HapticManager.notification(.error)
             }
+
+            isDownloading = false
         }
     }
 }

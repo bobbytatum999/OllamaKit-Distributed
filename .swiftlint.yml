@@ -1,0 +1,61 @@
+# SwiftLint Configuration for OllamaKit-Distributed
+# Run: swiftlint
+
+disabled_rules:
+  - trailing_whitespace
+  - line_length
+  - function_body_length
+  - file_length
+  - type_body_length
+  - cyclomatic_complexity
+  - function_parameter_count
+  - identifier_name
+  - large_tuple
+
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - explicit_init
+  - first_where
+  - fatal_error_message
+  - multiline_parameters
+  - unneeded_parentheses_in_closure_argument
+  - conditional_returns_on_newline
+  - contains_over_first_not_nil
+  - fallenwood_rule
+
+excluded:
+  - .build
+  - .swiftpm
+  - Pods
+  - DerivedData
+  - .derived
+
+analyzer_rules:
+  - explicit_self
+  - unused_declaration
+  - unused_import
+
+force_exhaustive_tests:
+  - enums
+
+custom_rules:
+  actor_isolation:
+    name: "Actor isolation"
+    regex: "(?<!@MainActor\\n)(?!actor\\s)\\bclass\\s+\\w+"
+    message: "Prefer actors over classes with lock-based synchronization. Found class"
+    severity: warning
+
+  print_debug:
+    name: "Print debugging"
+    regex: "(?<!//.*)\\bprint\\s*\\("
+    message: "Remove print() statements used for debugging, or wrap in #if DEBUG"
+    severity: warning
+
+  nserror_handling:
+    name: "NSError handling"
+    regex: "catch\\s*\\{\\s*_\\s*in"
+    message: "Avoid catching errors with _: use specific error handling or log the error"
+    severity: warning
+
+reporter: "xcode"
