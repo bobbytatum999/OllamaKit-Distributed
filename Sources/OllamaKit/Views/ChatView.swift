@@ -58,7 +58,7 @@ struct ChatView: View {
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             AnimatedMeshBackground()
             messagesList
             chatInputArea

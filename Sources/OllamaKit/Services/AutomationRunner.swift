@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import OllamaKit
 
 struct AnyCodable: Codable {
     let value: Any
@@ -50,6 +51,23 @@ struct AnyCodable: Codable {
     }
 }
 
+enum AutomationError: LocalizedError {
+    case connectionFailed(host: String, port: Int)
+    case serverNotEnabled
+    case modelNotFound
+
+    var errorDescription: String? {
+        switch self {
+        case .connectionFailed(let host, let port):
+            return "Could not connect to Ollama server at \(host):\(port). Make sure Ollama is running and the server is enabled in Settings."
+        case .serverNotEnabled:
+            return "Ollama server is not enabled. Enable it in Settings → Server."
+        case .modelNotFound:
+            return "No model available. Download a model first."
+        }
+    }
+}
+
 actor AutomationRunner {
     static let shared = AutomationRunner()
 
@@ -88,12 +106,27 @@ actor AutomationRunner {
     }
 
     private func runLLMStep(_ step: AutomationStep, context: [String: String]) async throws -> String {
+        let serverSettings = await MainActor.run { () -> (enabled: Bool, url: String, port: Int) in
+            let settings = AppSettings.shared
+            return (settings.serverEnabled, settings.localServerURL, settings.serverPort)
+        }
+
+        guard serverSettings.enabled else {
+            throw AutomationError.serverNotEnabled
+        }
+
         // Get active model
-        let tagsURL = URL(string: "http://127.0.0.1:11434/api/tags")!
-        let (tagsData, _) = try await URLSession.shared.data(from: tagsURL)
-        let tagsResponse = try JSONDecoder().decode([String: [AnyCodable]].self, from: tagsData)
-        let modelName = (tagsResponse["models"] as? [[String: AnyCodable]])?
-            .first?["name"]?.value as? String ?? "llama3.2"
+        let tagsURL = URL(string: "\(serverSettings.url)/api/tags")!
+        let (tagsData, tagsResponse) = try await URLSession.shared.data(from: tagsURL)
+        guard (tagsResponse as? HTTPURLResponse)?.statusCode == 200 else {
+            throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
+        }
+        let tagsResult = try JSONDecoder().decode([String: [AnyCodable]].self, from: tagsData)
+        guard let models = tagsResult["models"] as? [[String: AnyCodable]],
+              let firstModel = models.first,
+              let modelName = firstModel["name"]?.value as? String else {
+            throw AutomationError.modelNotFound
+        }
 
         // Interpolate context into prompt
         var prompt = step.params["prompt"] ?? ""
@@ -107,13 +140,16 @@ actor AutomationRunner {
             "stream": false
         ]
 
-        let chatURL = URL(string: "http://127.0.0.1:11434/api/chat")!
+        let chatURL = URL(string: "\(serverSettings.url)/api/chat")!
         var request = URLRequest(url: chatURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, chatResponse) = try await URLSession.shared.data(for: request)
+        guard (chatResponse as? HTTPURLResponse)?.statusCode == 200 else {
+            throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
+        }
         let response = try JSONDecoder().decode([String: AnyCodable].self, from: data)
         return (response["message"] as? [String: AnyCodable])?["content"]?.value as? String ?? "No response"
     }
