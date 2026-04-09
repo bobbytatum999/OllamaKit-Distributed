@@ -26,7 +26,7 @@
 		000000010000000000000017 /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000110 /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		000000010000000000000018 /* SurfaceSectionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000113 /* SurfaceSectionCard.swift */; };
 		000000010000000000000019 /* UnifiedModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000114 /* UnifiedModelCatalog.swift */; };
-		00000001000000000000002F /* ConversationPrompting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011B /* ConversationPrompting.swift */; };
+		000000010000000000000031 /* ConversationPrompting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011B /* ConversationPrompting.swift */; };
 		00000001000000000000001A /* CoreTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000116 /* CoreTypes.swift */; };
 		00000001000000000000001B /* ModelRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000117 /* ModelRegistry.swift */; };
 		00000001000000000000001C /* DeviceCapabilityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000118 /* DeviceCapabilityService.swift */; };
@@ -422,7 +422,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				00000001000000000000002F /* ConversationPrompting.swift in Sources */,
+				000000010000000000000031 /* ConversationPrompting.swift in Sources */,
 				00000001000000000000001A /* CoreTypes.swift in Sources */,
 				00000001000000000000001B /* ModelRegistry.swift in Sources */,
 				00000001000000000000001C /* DeviceCapabilityService.swift in Sources */,
