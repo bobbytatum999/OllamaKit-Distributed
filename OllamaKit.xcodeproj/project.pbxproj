@@ -26,12 +26,12 @@
 		000000010000000000000017 /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000110 /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		000000010000000000000018 /* SurfaceSectionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000113 /* SurfaceSectionCard.swift */; };
 		000000010000000000000019 /* UnifiedModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000114 /* UnifiedModelCatalog.swift */; };
+		00000001000000000000002F /* ConversationPrompting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011B /* ConversationPrompting.swift */; };
 		00000001000000000000001A /* CoreTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000116 /* CoreTypes.swift */; };
 		00000001000000000000001B /* ModelRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000117 /* ModelRegistry.swift */; };
 		00000001000000000000001C /* DeviceCapabilityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000118 /* DeviceCapabilityService.swift */; };
 		00000001000000000000001D /* GGUFBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000119 /* GGUFBackend.swift */; };
 		00000001000000000000001E /* RuntimeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011A /* RuntimeCoordinator.swift */; };
-		00000001000000000000002F /* ConversationPrompting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000011B /* ConversationPrompting.swift */; };
 		00000001000000000000001F /* OllamaCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000115 /* OllamaCore.framework */; };
 		000000010000000000000020 /* OllamaCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000115 /* OllamaCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		000000010000000000000021 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 000000010000000000000110 /* llama.xcframework */; };
@@ -131,12 +131,12 @@
 		000000010000000000000113 /* SurfaceSectionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceSectionCard.swift; sourceTree = "<group>"; };
 		000000010000000000000114 /* UnifiedModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedModelCatalog.swift; sourceTree = "<group>"; };
 		000000010000000000000115 /* OllamaCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = OllamaCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		00000001000000000000011B /* ConversationPrompting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPrompting.swift; sourceTree = "<group>"; };
 		000000010000000000000116 /* CoreTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTypes.swift; sourceTree = "<group>"; };
 		000000010000000000000117 /* ModelRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRegistry.swift; sourceTree = "<group>"; };
 		000000010000000000000118 /* DeviceCapabilityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCapabilityService.swift; sourceTree = "<group>"; };
 		000000010000000000000119 /* GGUFBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GGUFBackend.swift; sourceTree = "<group>"; };
 		00000001000000000000011A /* RuntimeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeCoordinator.swift; sourceTree = "<group>"; };
-		00000001000000000000011B /* ConversationPrompting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPrompting.swift; sourceTree = "<group>"; };
 		00000001000000000000011E /* LocalFilesModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesModels.swift; sourceTree = "<group>"; };
 		00000001000000000000011F /* LocalFilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesSettingsView.swift; sourceTree = "<group>"; };
 		000000010000000000000120 /* LocalFilesScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFilesScanner.swift; sourceTree = "<group>"; };
@@ -259,12 +259,12 @@
 		000000010000000000000520 /* OllamaCore */ = {
 			isa = PBXGroup;
 			children = (
+				00000001000000000000011B /* ConversationPrompting.swift */,
 				000000010000000000000116 /* CoreTypes.swift */,
 				000000010000000000000117 /* ModelRegistry.swift */,
 				000000010000000000000118 /* DeviceCapabilityService.swift */,
 				000000010000000000000119 /* GGUFBackend.swift */,
 				00000001000000000000011A /* RuntimeCoordinator.swift */,
-				00000001000000000000011B /* ConversationPrompting.swift */,
 			);
 			path = Sources/OllamaCore;
 			sourceTree = SOURCE_ROOT;
@@ -422,12 +422,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				00000001000000000000002F /* ConversationPrompting.swift in Sources */,
 				00000001000000000000001A /* CoreTypes.swift in Sources */,
 				00000001000000000000001B /* ModelRegistry.swift in Sources */,
 				00000001000000000000001C /* DeviceCapabilityService.swift in Sources */,
 				00000001000000000000001D /* GGUFBackend.swift in Sources */,
 				00000001000000000000001E /* RuntimeCoordinator.swift in Sources */,
-				00000001000000000000002F /* ConversationPrompting.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
