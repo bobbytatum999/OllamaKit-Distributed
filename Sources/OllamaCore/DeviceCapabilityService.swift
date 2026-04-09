@@ -12,10 +12,10 @@ import Metal
 import FoundationModels
 #endif
 
-// FIX: @MainActor required because interfaceKind() calls UIDevice.current,
-// which is main-thread-only. Actor methods may run on arbitrary threads,
-// so @MainActor is needed to guarantee main-thread execution.
-public @MainActor actor DeviceCapabilityService {
+// FIX: changed from 'actor' to final class. The interfaceKind() method uses
+// UIDevice.current which is main-thread-only, so it is marked @MainActor.
+// Callers use MainActor.assumeIsolated for sync access to the singleton.
+public final class DeviceCapabilityService {
     public static let shared = DeviceCapabilityService()
 
     public func currentProfile() -> DeviceProfile {
@@ -40,7 +40,7 @@ public @MainActor actor DeviceCapabilityService {
             chipFamily: chipFamily(for: machineIdentifier),
             systemVersion: systemVersionString(),
             physicalMemoryBytes: physicalMemory,
-            interfaceKind: interfaceKind(),
+            interfaceKind: MainActor.assumeIsolated { interfaceKind() },
             recommendedGGUFBudgetBytes: recommendedBudget,
             supportedGGUFBudgetBytes: supportedBudget,
             hasMetalDevice: metalDevice != nil,
@@ -249,7 +249,7 @@ public @MainActor actor DeviceCapabilityService {
         return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
     }
 
-    private func interfaceKind() -> DeviceInterfaceKind {
+    @MainActor private func interfaceKind() -> DeviceInterfaceKind {
         #if canImport(UIKit)
         switch UIDevice.current.userInterfaceIdiom {
         case .phone:
