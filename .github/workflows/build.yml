@@ -255,6 +255,9 @@ jobs:
           rm -rf build
           mkdir -p build/logs build/ipas
 
+          # Clear stale DerivedData to ensure a clean incremental build
+          rm -rf ~/Library/Developer/Xcode/DerivedData/OllamaKit-*
+
           if [[ "$CONFIGURATION" == "Debug" ]]; then
             CONFIG_SLUG="debug"
           else
