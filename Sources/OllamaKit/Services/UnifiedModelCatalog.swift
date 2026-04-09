@@ -276,6 +276,9 @@ extension RuntimePreferences {
             flashAttentionEnabled: settings.flashAttentionEnabled,
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,
+            turboQuantMode: settings.turboQuantMode,
+            kvCacheTypeK: settings.kvCacheTypeK,
+            kvCacheTypeV: settings.kvCacheTypeV,
             keepModelInMemory: settings.keepModelInMemory,
             autoOffloadMinutes: settings.autoOffloadMinutes
         )
