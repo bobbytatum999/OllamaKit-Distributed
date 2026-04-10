@@ -173,7 +173,7 @@ struct GlassCard<Content: View>: View {
 
 // MARK: - Animated Background
 
-struct AnimatedMeshBackground: View {
+public struct AnimatedMeshBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase: Double = 0
     
