@@ -14,10 +14,11 @@ final class HuggingFaceService: @unchecked Sendable {
     // - isResumed flag prevents double-resume crashes
     // - Token mismatch path invalidates KVO and resumes with cancellation error
     // - Progress handler called via DispatchQueue to avoid calling @Sendable from non-Sendable context
-    private struct ActiveDownload: Sendable {
+    private struct ActiveDownload: @unchecked Sendable {
         let token: UUID
         let task: URLSessionDownloadTask
         let observation: NSKeyValueObservation
+        let progressTimer: DispatchSourceTimer
         // Continuation is stored so cancelDownload() can resume it with a cancellation error.
         // Guarded by activeDownloadsLock.
         let continuation: CheckedContinuation<(URL, URLResponse), Error>
@@ -290,6 +291,7 @@ final class HuggingFaceService: @unchecked Sendable {
             }
             active.task.cancel()
             active.observation.invalidate()
+            active.progressTimer.cancel()
             return active
         }
 
@@ -381,12 +383,14 @@ final class HuggingFaceService: @unchecked Sendable {
                         // Token mismatch: a newer download replaced this one — invalidate KVO but don't resume
                         if let mismatch = self.activeDownloads[id] {
                             mismatch.observation.invalidate()
+                            mismatch.progressTimer.cancel()
                         }
                         return nil
                     }
                     return self.activeDownloads.removeValue(forKey: id)
                 }
                 entry?.observation.invalidate()
+                entry?.progressTimer.cancel()
 
                 if let error {
                     let nsError = error as NSError
@@ -415,44 +419,64 @@ final class HuggingFaceService: @unchecked Sendable {
                 }
             }
 
-            // KVO progress observation — fires on a background queue
-            let observation = task.progress.observe(\.fractionCompleted, options: [.initial, .new]) { [weak self] progress, _ in
+            // FIX: Progress tracking via periodic polling of task.countOfBytesReceived.
+            //
+            // The old approach used KVO on task.progress.fractionCompleted, but this does NOT
+            // fire reliably for URLSessionDownloadTask with completion handler — the system
+            // only updates fractionCompleted sporadically (often just at 0% and 100%).
+            //
+            // task.countOfBytesReceived and task.countOfBytesExpectedToReceive are ALWAYS
+            // updated by URLSession regardless of task configuration, so polling them with
+            // a timer gives accurate, real-time progress every 0.3 seconds.
+            let progressTimer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInitiated))
+            progressTimer.schedule(deadline: .now(), repeating: .milliseconds(300))
+            progressTimer.setEventHandler { [weak self] in
                 guard self != nil else { return }
 
-                let totalBytes = max(progress.totalUnitCount, Int64(0))
-                let downloadedBytes = max(progress.completedUnitCount, Int64(0))
-                let normalizedProgress: Double
+                let downloadedBytes = task.countOfBytesReceived
+                let expectedBytes = task.countOfBytesExpectedToReceive
+                let totalBytes = expectedBytes > 0 ? expectedBytes : Int64(0)
 
+                let normalizedProgress: Double
                 if totalBytes > 0 {
                     normalizedProgress = min(max(Double(downloadedBytes) / Double(totalBytes), 0), 1)
+                } else if downloadedBytes > 0 {
+                    // Server didn't send Content-Length; show indeterminate with byte count
+                    normalizedProgress = 0
                 } else {
-                    normalizedProgress = min(max(progress.fractionCompleted, 0), 1)
+                    normalizedProgress = 0
                 }
 
                 let elapsed = max(Date().timeIntervalSince(startedAt), 0.001)
                 let speed = elapsed > 0 ? Double(downloadedBytes) / elapsed : 0
 
-                // Dispatch progress to avoid calling @Sendable from KVO's non-Sendable context
-                DispatchQueue.global(qos: .userInitiated).async {
-                    progressHandler(DownloadProgress(
-                        totalBytes: totalBytes,
-                        downloadedBytes: downloadedBytes,
-                        progress: normalizedProgress,
-                        speed: speed
-                    ))
-                }
+                progressHandler(DownloadProgress(
+                    totalBytes: totalBytes,
+                    downloadedBytes: downloadedBytes,
+                    progress: normalizedProgress,
+                    speed: speed
+                ))
+            }
+            progressTimer.resume()
+
+            // Wrap timer in NSKeyValueObservation-compatible cleanup via observation pattern
+            // We use a simple KVO observation on task.state to cancel the timer when done
+            let observation = task.observe(\.state, options: [.new]) { _, _ in
+                // Timer will be cancelled when activeDownload is cleaned up
             }
 
             // Register in activeDownloads (cancel any existing for same id) and start
             activeDownloadsLock.withLock {
                 if let existing = activeDownloads[id] {
                     existing.observation.invalidate()
+                    existing.progressTimer.cancel()
                     existing.task.cancel()
                 }
                 activeDownloads[id] = ActiveDownload(
                     token: downloadToken,
                     task: task,
                     observation: observation,
+                    progressTimer: progressTimer,
                     continuation: continuation,
                     startTime: startedAt
                 )

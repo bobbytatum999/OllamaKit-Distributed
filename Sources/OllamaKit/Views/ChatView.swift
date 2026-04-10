@@ -62,10 +62,12 @@ struct ChatView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             AnimatedMeshBackground()
-            messagesList
-            chatInputArea
+            VStack(spacing: 0) {
+                messagesList
+                chatInputArea
+            }
         }
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -1420,7 +1422,10 @@ private struct MessagesListView: View {
                         .id("typing")
                     }
 
-                    Color.clear.frame(height: 1).id(bottomID)
+                    // FIX: Bottom spacer to ensure last message is visible above the
+                    // input area. Previously was 1pt which caused the last message to be
+                    // completely hidden behind the chat input bar.
+                    Color.clear.frame(height: 8).id(bottomID)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
