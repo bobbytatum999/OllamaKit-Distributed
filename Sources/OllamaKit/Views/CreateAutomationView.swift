@@ -163,7 +163,12 @@ struct CreateAutomationView: View {
                 "stream": false
             ]
 
-            let url = URL(string: "http://127.0.0.1:11434/api/chat")!
+            guard let url = URL(string: "\(AppSettings.shared.localServerURL)/api/chat") else {
+                errorMessage = "Invalid server URL"
+                showingError = true
+                isGenerating = false
+                return
+            }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
