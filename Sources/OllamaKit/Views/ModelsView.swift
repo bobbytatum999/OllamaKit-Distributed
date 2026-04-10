@@ -2020,11 +2020,11 @@ struct FeaturedModelsSection: View {
     @StateObject private var sharedSearchVM = ModelSearchViewModel()
 
     private let featuredModels: [FeaturedModelInfo] = [
-        FeaturedModelInfo(id: "NousResearch/Meta-Llama-3.2-1B-Instruct-GGUF", displayName: "Llama 3.2 1B", size: "1.3 GB", description: "Ultra-fast, great for everyday tasks"),
-        FeaturedModelInfo(id: "NousResearch/Meta-Llama-3.2-3B-Instruct-GGUF", displayName: "Llama 3.2 3B", size: "2.0 GB", description: "Balanced speed and quality"),
+        FeaturedModelInfo(id: "bartowski/Llama-3.2-1B-Instruct-GGUF", displayName: "Llama 3.2 1B", size: "1.3 GB", description: "Ultra-fast, great for everyday tasks"),
+        FeaturedModelInfo(id: "bartowski/Llama-3.2-3B-Instruct-GGUF", displayName: "Llama 3.2 3B", size: "2.0 GB", description: "Balanced speed and quality"),
         FeaturedModelInfo(id: "Qwen/Qwen2.5-1.5B-Instruct-GGUF", displayName: "Qwen 2.5 1.5B", size: "1.0 GB", description: "Excellent multilingual support"),
-        FeaturedModelInfo(id: "microsoft/Phi-3.5-mini-instruct-GGUF", displayName: "Phi-3.5 Mini", size: "2.3 GB", description: "Strong reasoning in a small package"),
-        FeaturedModelInfo(id: "mistralai/Mistral-7B-Instruct-v0.3-GGUF", displayName: "Mistral 7B", size: "4.4 GB", description: "Popular open-source model"),
+        FeaturedModelInfo(id: "bartowski/Phi-3.5-mini-instruct-GGUF", displayName: "Phi-3.5 Mini", size: "2.3 GB", description: "Strong reasoning in a small package"),
+        FeaturedModelInfo(id: "MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF", displayName: "Mistral 7B", size: "4.4 GB", description: "Popular open-source model"),
     ]
 
     var body: some View {
