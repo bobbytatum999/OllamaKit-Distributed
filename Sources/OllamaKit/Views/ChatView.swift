@@ -87,6 +87,13 @@ struct ChatView: View {
         .task {
             await modelStore.refresh()
             syncCurrentModelSelection()
+            // Sync parameter defaults from user's Settings
+            let settings = AppSettings.shared
+            paramTemperature = settings.defaultTemperature
+            paramTopP = settings.defaultTopP
+            paramTopK = settings.defaultTopK
+            paramRepeatPenalty = settings.defaultRepeatPenalty
+            paramMaxTokens = settings.maxTokens
         }
         .onDisappear {
             // FIX: Cancel speech recognition Task when view disappears.
@@ -481,18 +488,6 @@ struct ChatView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .onChange(of: selectedPhotoItems) { _, newItems in
-                            Task {
-                                var newImages: [UIImage] = []
-                                for item in newItems {
-                                    if let data = try? await item.loadTransferable(type: Data.self),
-                                       let image = UIImage(data: data) {
-                                        newImages.append(image)
-                                    }
-                                }
-                                selectedImages = newImages
-                            }
-                        }
                     }
                     .padding(.horizontal, 16)
                 }
@@ -570,7 +565,7 @@ struct ChatView: View {
                         .font(.system(size: 32))
                         .foregroundStyle(trimmedMessageText.isEmpty ? Color.secondary : Color.accentColor)
                 }
-                .disabled(trimmedMessageText.isEmpty || viewModel.isGenerating)
+                .disabled((trimmedMessageText.isEmpty && selectedImages.isEmpty) || viewModel.isGenerating)
 
                 Button(action: toggleRecording) {
                     Image(systemName: isRecording ? "mic.slash.fill" : "mic.fill")

@@ -48,10 +48,11 @@ final class ServerManager: @unchecked Sendable {
         isStarting = true
         stateLock.unlock()
 
-        log(category: .app, level: .info, title: "Starting Server", message: "Initializing network listener on port 11434...")
+        let configuredPort = await MainActor.run { UInt16(AppSettings.shared.serverPort) }
+        log(category: .app, level: .info, title: "Starting Server", message: "Initializing network listener on port \(configuredPort)...")
 
         do {
-            let port = NWEndpoint.Port(rawValue: 11434)!
+            let port = NWEndpoint.Port(rawValue: configuredPort)!
             let parameters = NWParameters.tcp
             parameters.allowLocalEndpointReuse = true
 
@@ -1051,6 +1052,6 @@ final class ServerManager: @unchecked Sendable {
     /// Reads the server exposure mode directly from UserDefaults to avoid @MainActor isolation.
     /// This is safe because the value is a simple string stored in UserDefaults.
     private static func readServerExposureModeRaw() -> String {
-        UserDefaults.standard.string(forKey: "server_exposure_mode") ?? "localOnly"
+        UserDefaults.standard.string(forKey: "serverExposureMode") ?? "localOnly"
     }
 }

@@ -264,7 +264,7 @@ struct OnboardingView: View {
                 Spacer()
                 if currentPage < 3 {
                     Button("Skip") {
-                        hasCompletedOnboarding = false
+                        hasCompletedOnboarding = true
                     }
                     .font(.caption)
                     .foregroundStyle(.gray)
