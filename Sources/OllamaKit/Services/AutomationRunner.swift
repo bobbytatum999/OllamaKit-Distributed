@@ -116,7 +116,9 @@ actor AutomationRunner {
         }
 
         // Get active model
-        let tagsURL = URL(string: "\(serverSettings.url)/api/tags")!
+        guard let tagsURL = URL(string: "\(serverSettings.url)/api/tags") else {
+            throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
+        }
         let (tagsData, tagsResponse) = try await URLSession.shared.data(from: tagsURL)
         guard (tagsResponse as? HTTPURLResponse)?.statusCode == 200 else {
             throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
@@ -140,7 +142,9 @@ actor AutomationRunner {
             "stream": false
         ]
 
-        let chatURL = URL(string: "\(serverSettings.url)/api/chat")!
+        guard let chatURL = URL(string: "\(serverSettings.url)/api/chat") else {
+            throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
+        }
         var request = URLRequest(url: chatURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
