@@ -271,8 +271,8 @@ struct CreateAutomationView: View {
     private func saveAutomation() {
         guard let automation = generatedAutomation else { return }
 
-        let steps: [AutomationStep] = automation.steps.map { step in
-            AutomationStep(
+        let steps: [AutomationCoreStep] = automation.steps.map { step in
+            AutomationCoreStep(
                 service: step.service,
                 action: step.action,
                 params: step.params,
@@ -295,10 +295,27 @@ struct CreateAutomationView: View {
         try? modelContext.save()
 
         Task { @MainActor in
-            HapticManager.notification(.success)
+            HapticManager.impact(.medium)
         }
 
         dismiss()
+    }
+}
+
+// Rename to avoid conflict with the one in AppModels.swift
+public struct AutomationCoreStep: Codable, Identifiable {
+    public var id: String
+    public var service: String
+    public var action: String
+    public var params: [String: String]
+    public var outputKey: String
+
+    public init(id: String = UUID().uuidString, service: String, action: String, params: [String: String] = [:], outputKey: String = "") {
+        self.id = id
+        self.service = service
+        self.action = action
+        self.params = params
+        self.outputKey = outputKey
     }
 }
 
