@@ -77,7 +77,9 @@ actor AutomationRunner {
             throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
         }
         let tagsResult = try JSONDecoder().decode([String: [AnyAutomationCodable]].self, from: tagsData)
-        guard let models = tagsResult["models"] as? [[String: AnyAutomationCodable]],
+        
+        let modelsWrapper = tagsResult["models"]?.value as? [[String: AnyAutomationCodable]]
+        guard let models = modelsWrapper,
               let firstModel = models.first,
               let modelName = firstModel["name"]?.value as? String else {
             throw AutomationError.modelNotFound
@@ -108,7 +110,8 @@ actor AutomationRunner {
             throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
         }
         let response = try JSONDecoder().decode([String: AnyAutomationCodable].self, from: data)
-        return (response["message"] as? [String: AnyAutomationCodable])?["content"]?.value as? String ?? "No response"
+        let messageDict = response["message"]?.value as? [String: AnyAutomationCodable]
+        return messageDict?["content"]?.value as? String ?? "No response"
     }
 
     private func runHTTPStep(_ step: AutomationStep, context: [String: String]) async throws -> String {

@@ -197,8 +197,9 @@ struct ModelSnapshot: Identifiable, Hashable, Sendable {
     }
 
     var configuredAgentCapabilityOverride: ModelAgentCapabilityOverride? {
-        let settings = AppSettings.shared
-        return settings.agentCapabilityOverride(for: catalogId)
+        return MainActor.assumeIsolated {
+            AppSettings.shared.agentCapabilityOverride(for: catalogId)
+        }
     }
 
     var hasAgentCapabilityOverride: Bool {
