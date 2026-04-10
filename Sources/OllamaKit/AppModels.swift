@@ -1540,7 +1540,7 @@ final class SavedAutomation {
     }
 }
 
-struct AutomationStep: Codable, Identifiable {
+public struct AutomationStep: Codable, Identifiable {
     var id: String
     var service: String // "llm" | "http" | "notify"
     var action: String
