@@ -2,16 +2,15 @@ import SwiftUI
 import SwiftData
 import OllamaCore
 
-// Temporary internal definition to avoid cross-module or missing-symbol issues
-// during clean builds while the Runner refactoring is in progress.
-struct AnyCodable: Codable {
-    let value: Any
+// Rename to avoid conflict with project-level or other symbols
+public struct AnyAutomationCodable: Codable {
+    public let value: Any
     
-    init(_ value: Any) {
+    public init(_ value: Any) {
         self.value = value
     }
     
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         
         if let bool = try? container.decode(Bool.self) {
@@ -22,16 +21,16 @@ struct AnyCodable: Codable {
             value = double
         } else if let string = try? container.decode(String.self) {
             value = string
-        } else if let array = try? container.decode([AnyCodable].self) {
+        } else if let array = try? container.decode([AnyAutomationCodable].self) {
             value = array.map { $0.value }
-        } else if let dictionary = try? container.decode([String: AnyCodable].self) {
+        } else if let dictionary = try? container.decode([String: AnyAutomationCodable].self) {
             value = dictionary.mapValues { $0.value }
         } else {
             value = NSNull()
         }
     }
     
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         
         switch value {
@@ -44,9 +43,9 @@ struct AnyCodable: Codable {
         case let string as String:
             try container.encode(string)
         case let array as [Any]:
-            try container.encode(array.map { AnyCodable($0) })
+            try container.encode(array.map { AnyAutomationCodable($0) })
         case let dictionary as [String: Any]:
-            try container.encode(dictionary.mapValues { AnyCodable($0) })
+            try container.encode(dictionary.mapValues { AnyAutomationCodable($0) })
         default:
             try container.encodeNil()
         }
@@ -228,8 +227,8 @@ struct CreateAutomationView: View {
             request.timeoutInterval = 30
 
             let (data, _) = try await URLSession.shared.data(for: request)
-            let response = try JSONDecoder().decode([String: AnyCodable].self, from: data)
-            let content = (response["message"] as? [String: AnyCodable])?["content"]?.value as? String ?? ""
+            let response = try JSONDecoder().decode([String: AnyAutomationCodable].self, from: data)
+            let content = (response["message"] as? [String: AnyAutomationCodable])?["content"]?.value as? String ?? ""
 
             // Clean the response - strip markdown code blocks if present
             var jsonString = content.trimmingCharacters(in: .whitespacesAndNewlines)
