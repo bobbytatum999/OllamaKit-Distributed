@@ -19,10 +19,6 @@ final class HuggingFaceService: @unchecked Sendable {
         let task: URLSessionDownloadTask
         let observation: NSKeyValueObservation
         let progressTimer: DispatchSourceTimer
-        // Continuation is stored so cancelDownload() can resume it with a cancellation error.
-        // Guarded by activeDownloadsLock.
-        let continuation: CheckedContinuation<(URL, URLResponse), Error>
-        let startTime: Date
     }
 
     private let baseURLString = "https://huggingface.co/api"
@@ -284,16 +280,16 @@ final class HuggingFaceService: @unchecked Sendable {
             guard let active = activeDownloads.removeValue(forKey: id) else {
                 return nil
             }
-            active.task.cancel()
-            active.observation.invalidate()
-            active.progressTimer.cancel()
             return active
         }
 
-        // Resume the continuation with cancellation — must be done outside the lock
-        // to avoid deadlock (continuation resumes on the session's delegate queue)
+        // Cancel task, invalidate observation, cancel timer
+        // task.cancel() triggers the completion handler with NSURLErrorCancelled,
+        // which naturally resumes the continuation with an error.
         if let entry = entry {
-            entry.continuation.resume(throwing: CancellationError())
+            entry.task.cancel()
+            entry.observation.invalidate()
+            entry.progressTimer.cancel()
         }
     }
 
@@ -356,9 +352,6 @@ final class HuggingFaceService: @unchecked Sendable {
 
     // MARK: - Private Helpers
 
-    /// The core download: URLSession.shared downloadTask with completion handler + KVO progress.
-    /// Continuation is stored in ActiveDownload so cancelDownload() can resume it.
-    /// isResumed flag prevents double-resume crashes.
     private func download(
         request: URLRequest,
         id: String,
@@ -369,65 +362,37 @@ final class HuggingFaceService: @unchecked Sendable {
             let startedAt = Date()
 
             let task = session.downloadTask(with: request) { [weak self] temporaryURL, response, error in
-                guard let self = self else { return }
-
-                // Atomic cleanup: remove from activeDownloads and get the continuation + observation
-                let entry = self.activeDownloadsLock.withLock { () -> ActiveDownload? in
-                    // Only handle the entry that matches our token
-                    guard let activeDownload = self.activeDownloads[id], activeDownload.token == downloadToken else {
-                        // Token mismatch: a newer download replaced this one — invalidate KVO but don't resume
-                        if let mismatch = self.activeDownloads[id] {
-                            mismatch.observation.invalidate()
-                            mismatch.progressTimer.cancel()
+                // Simple cleanup: remove from activeDownloads and invalidate
+                var completedDownload: ActiveDownload?
+                if let self {
+                    completedDownload = self.activeDownloadsLock.withLock { () -> ActiveDownload? in
+                        guard let activeDownload = self.activeDownloads[id], activeDownload.token == downloadToken else {
+                            return nil
                         }
-                        return nil
+                        return self.activeDownloads.removeValue(forKey: id)
                     }
-                    return self.activeDownloads.removeValue(forKey: id)
                 }
-                entry?.observation.invalidate()
-                entry?.progressTimer.cancel()
+                completedDownload?.observation.invalidate()
+                completedDownload?.progressTimer.cancel()
 
+                // Always resume the continuation — exactly once
                 if let error {
-                    let nsError = error as NSError
-                    if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
-                        // Already cancelled by cancelDownload() — don't double-resume
-                        return
-                    }
-                    // Resume with error (only if not already resumed by cancel)
-                    if let cont = entry?.continuation {
-                        // Check if already resumed by trying to resume — URLSession won't call us twice
-                        cont.resume(throwing: error)
-                    }
+                    continuation.resume(throwing: error)
                     return
                 }
 
-                guard let tempURL = temporaryURL, let resp = response else {
-                    if let cont = entry?.continuation {
-                        cont.resume(throwing: URLError(.badServerResponse))
-                    }
+                guard let temporaryURL, let response else {
+                    continuation.resume(throwing: URLError(.badServerResponse))
                     return
                 }
 
-                // Resume with success
-                if let cont = entry?.continuation {
-                    cont.resume(returning: (tempURL, resp))
-                }
+                continuation.resume(returning: (temporaryURL, response))
             }
 
-            // FIX: Progress tracking via periodic polling of task.countOfBytesReceived.
-            //
-            // The old approach used KVO on task.progress.fractionCompleted, but this does NOT
-            // fire reliably for URLSessionDownloadTask with completion handler — the system
-            // only updates fractionCompleted sporadically (often just at 0% and 100%).
-            //
-            // task.countOfBytesReceived and task.countOfBytesExpectedToReceive are ALWAYS
-            // updated by URLSession regardless of task configuration, so polling them with
-            // a timer gives accurate, real-time progress every 0.3 seconds.
+            // Progress tracking via periodic polling of task.countOfBytesReceived
             let progressTimer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInitiated))
-            progressTimer.schedule(deadline: .now(), repeating: .milliseconds(300))
-            progressTimer.setEventHandler { [weak self] in
-                guard self != nil else { return }
-
+            progressTimer.schedule(deadline: .now() + 0.3, repeating: .milliseconds(500))
+            progressTimer.setEventHandler {
                 let downloadedBytes = task.countOfBytesReceived
                 let expectedBytes = task.countOfBytesExpectedToReceive
                 let totalBytes = expectedBytes > 0 ? expectedBytes : Int64(0)
@@ -435,15 +400,12 @@ final class HuggingFaceService: @unchecked Sendable {
                 let normalizedProgress: Double
                 if totalBytes > 0 {
                     normalizedProgress = min(max(Double(downloadedBytes) / Double(totalBytes), 0), 1)
-                } else if downloadedBytes > 0 {
-                    // Server didn't send Content-Length; show indeterminate with byte count
-                    normalizedProgress = 0
                 } else {
                     normalizedProgress = 0
                 }
 
                 let elapsed = max(Date().timeIntervalSince(startedAt), 0.001)
-                let speed = elapsed > 0 ? Double(downloadedBytes) / elapsed : 0
+                let speed = Double(downloadedBytes) / elapsed
 
                 progressHandler(DownloadProgress(
                     totalBytes: totalBytes,
@@ -454,26 +416,21 @@ final class HuggingFaceService: @unchecked Sendable {
             }
             progressTimer.resume()
 
-            // Wrap timer in NSKeyValueObservation-compatible cleanup via observation pattern
-            // We use a simple KVO observation on task.state to cancel the timer when done
-            let observation = task.observe(\.state, options: [.new]) { _, _ in
-                // Timer will be cancelled when activeDownload is cleaned up
-            }
+            // Simple KVO observation for cleanup tracking
+            let observation = task.observe(\.state, options: [.new]) { _, _ in }
 
-            // Register in activeDownloads (cancel any existing for same id) and start
+            // Register and start
             activeDownloadsLock.withLock {
                 if let existing = activeDownloads[id] {
+                    existing.task.cancel()
                     existing.observation.invalidate()
                     existing.progressTimer.cancel()
-                    existing.task.cancel()
                 }
                 activeDownloads[id] = ActiveDownload(
                     token: downloadToken,
                     task: task,
                     observation: observation,
-                    progressTimer: progressTimer,
-                    continuation: continuation,
-                    startTime: startedAt
+                    progressTimer: progressTimer
                 )
             }
 
