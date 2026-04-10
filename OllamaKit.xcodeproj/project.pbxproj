@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0F0000000000000000000002 /* ThermalMonitorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0000000000000000000001 /* ThermalMonitorService.swift */; };
 		000000010000000000000001 /* OllamaKitApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000101 /* OllamaKitApp.swift */; };
 		000000010000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000102 /* ContentView.swift */; };
 		000000010000000000000003 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000010000000000000103 /* ChatView.swift */; };
@@ -109,6 +110,7 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0F0000000000000000000001 /* ThermalMonitorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalMonitorService.swift; sourceTree = "<group>"; };
 		000000010000000000000100 /* OllamaKit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OllamaKit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000010000000000000101 /* OllamaKitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaKitApp.swift; sourceTree = "<group>"; };
 		000000010000000000000102 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -237,6 +239,7 @@
 				000000010000000000000120 /* LocalFilesScanner.swift */,
 				000000010000000000000121 /* LocalFilesTool.swift */,
 				000000010000000000000108 /* ServerManager.swift */,
+				0F0000000000000000000001 /* ThermalMonitorService.swift */,
 				000000010000000000000109 /* ModelRunner.swift */,
 				00000001000000000000010A /* HuggingFaceService.swift */,
 				00000001000000000000010B /* BackgroundTaskManager.swift */,
@@ -403,6 +406,7 @@
 				000000010000000000000006 /* ServerView.swift in Sources */,
 				000000010000000000000007 /* SettingsView.swift in Sources */,
 				000000010000000000000008 /* ServerManager.swift in Sources */,
+				0F0000000000000000000002 /* ThermalMonitorService.swift in Sources */,
 				000000010000000000000009 /* ModelRunner.swift in Sources */,
 				00000001000000000000000A /* HuggingFaceService.swift in Sources */,
 				00000001000000000000000B /* BackgroundTaskManager.swift in Sources */,

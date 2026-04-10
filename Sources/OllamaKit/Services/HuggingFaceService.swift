@@ -257,6 +257,8 @@ final class HuggingFaceService: @unchecked Sendable {
 
             await log(.huggingFace, level: .info, title: "HF Model Download Completed", message: "Downloaded: \(modelId)", metadata: ["model_id": modelId, "destination": destinationURL.path, "size_bytes": "\(fileSize)"])
 
+            let defaultContextLength = await MainActor.run { AppSettings.shared.defaultContextLength }
+
             return DownloadedModel(
                 name: filename.replacingOccurrences(of: ".gguf", with: ""),
                 modelId: modelId,
@@ -266,7 +268,7 @@ final class HuggingFaceService: @unchecked Sendable {
                 isDownloaded: true,
                 quantization: extractQuantization(from: filename) ?? "GGUF",
                 parameters: inferParameterSize(from: filename),
-                contextLength: AppSettings.shared.defaultContextLength
+                contextLength: defaultContextLength
             )
         } catch {
             try? FileManager.default.removeItem(at: stagedURL)
@@ -460,7 +462,7 @@ final class HuggingFaceService: @unchecked Sendable {
 
     private func authorizedRequest(url: URL) -> URLRequest {
         var request = URLRequest(url: url)
-        let token = AppSettings.shared.huggingFaceToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = (UserDefaults.standard.string(forKey: "huggingFaceToken") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }

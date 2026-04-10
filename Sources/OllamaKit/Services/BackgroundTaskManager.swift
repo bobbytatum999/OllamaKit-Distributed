@@ -49,7 +49,8 @@ final class BackgroundTaskManager: @unchecked Sendable {
     }
 
     func scheduleBackgroundTask() {
-        guard AppSettings.shared.serverEnabled else {
+        let serverEnabled = UserDefaults.standard.bool(forKey: "serverEnabled")
+        guard serverEnabled else {
             cancelScheduledBackgroundTask()
             return
         }
@@ -103,18 +104,7 @@ final class BackgroundTaskManager: @unchecked Sendable {
     }
 
     private func handleBackgroundTask(_ task: BGProcessingTask) {
-        // FIX: scheduleBackgroundTask() reads AppSettings.shared.serverEnabled (now @MainActor).
-        // Must check on main thread before calling scheduleBackgroundTask().
-        let serverEnabled = Thread.isMainThread ? AppSettings.shared.serverEnabled : {
-            var enabled = false
-            let semaphore = DispatchSemaphore(value: 0)
-            Task { @MainActor in
-                enabled = AppSettings.shared.serverEnabled
-                semaphore.signal()
-            }
-            semaphore.wait()
-            return enabled
-        }()
+        let serverEnabled = UserDefaults.standard.bool(forKey: "serverEnabled")
 
         if serverEnabled {
             scheduleBackgroundTask()

@@ -438,7 +438,7 @@ final class DownloadedModel {
     }
 
     var runtimeContextLength: Int {
-        AppSettings.shared.defaultContextLength
+        (UserDefaults.standard.object(forKey: "defaultContextLength") as? Int) ?? 4096
     }
 
     var persistentReference: String {
@@ -584,6 +584,7 @@ enum BuiltInModelCatalog {
         )
     }
 
+    @MainActor
     static func selectionModels(downloadedModels: [ModelSnapshot]) -> [ModelSnapshot] {
         let appleIsAvailable = availability().isAvailable
 
@@ -599,6 +600,7 @@ enum BuiltInModelCatalog {
         }
     }
 
+    @MainActor
     static func resolveStoredReference(_ candidate: String, in downloadedModels: [ModelSnapshot]) -> ModelSnapshot? {
         ModelSnapshot.resolveStoredReference(candidate, in: selectionModels(downloadedModels: downloadedModels))
     }

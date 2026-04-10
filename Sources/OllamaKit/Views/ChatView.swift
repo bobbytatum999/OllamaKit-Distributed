@@ -36,10 +36,14 @@ struct ChatView: View {
     // FIX: Store recognition Task so it can be cancelled on view disappear.
     // Previously no onDisappear cleanup existed, so the Task ran indefinitely.
     @State private var recognitionTask: Task<Void, Never>?
-    private var speechRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var speechAudioEngine: AVAudioEngine?
+    @State private var speechRequest: SFSpeechAudioBufferRecognitionRequest?
+    @State private var speechAudioEngine: AVAudioEngine?
     
     @Namespace private var scrollID
+
+    init(session: ChatSession) {
+        self.session = session
+    }
 
     private let bottomID = "bottom"
 

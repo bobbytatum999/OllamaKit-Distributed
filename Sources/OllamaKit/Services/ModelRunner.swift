@@ -35,6 +35,8 @@ final class ModelRunner: ObservableObject {
     }
 
     func loadModel(catalogId: String, contextLength: Int = 4096, gpuLayers: Int? = nil) async throws {
+        let resolvedGpuLayers = await MainActor.run { gpuLayers ?? AppSettings.shared.gpuLayers }
+        let resolvedKvCachePreset = await MainActor.run { AppSettings.shared.kvCachePreset.rawValue }
         await MainActor.run {
             AppLogStore.shared.record(
                 .model,
@@ -43,36 +45,47 @@ final class ModelRunner: ObservableObject {
                 metadata: [
                     "catalog_id": catalogId,
                     "context_length": "\(max(contextLength, 512))",
-                    "gpu_layers": "\(gpuLayers ?? AppSettings.shared.gpuLayers)",
-                    "kv_cache_preset": AppSettings.shared.kvCachePreset.rawValue
+                    "gpu_layers": "\(resolvedGpuLayers)",
+                    "kv_cache_preset": resolvedKvCachePreset
                 ]
             )
         }
-        if let snapshot = await ModelStorage.shared.snapshot(name: catalogId),
-           snapshot.backendKind == .ggufLlama,
-           !snapshot.isValidatedRunnable
-        {
-            let refreshedSnapshot = await ModelStorage.shared.validateModel(catalogId: snapshot.catalogId) ?? snapshot
-            guard refreshedSnapshot.isValidatedRunnable else {
-                throw ModelError.backendUnavailable(
-                    refreshedSnapshot.validationSummary
-                        ?? "This GGUF model failed validation on this device and cannot be loaded for chat."
-                )
+        if let snapshot = await ModelStorage.shared.snapshot(name: catalogId) {
+            let backendKind = await MainActor.run { snapshot.backendKind }
+            let isValidatedRunnable = await MainActor.run { snapshot.isValidatedRunnable }
+            if backendKind == .ggufLlama && !isValidatedRunnable {
+                let refreshedSnapshot = await ModelStorage.shared.validateModel(catalogId: await MainActor.run { snapshot.catalogId }) ?? snapshot
+                let refreshedIsValid = await MainActor.run { refreshedSnapshot.isValidatedRunnable }
+                guard refreshedIsValid else {
+                    let summary = await MainActor.run { refreshedSnapshot.validationSummary }
+                    throw ModelError.backendUnavailable(
+                        summary
+                            ?? "This GGUF model failed validation on this device and cannot be loaded for chat."
+                    )
+                }
             }
         }
 
-        let settings = AppSettings.shared
+        let (settings_gpuLayers, settings_threads, settings_batchSize, settings_kvCachePreset,
+             settings_flashAttention, settings_mmap, settings_mlock, settings_keepInMemory,
+             settings_autoOffload) = await MainActor.run {
+            let s = AppSettings.shared
+            return (gpuLayers ?? s.gpuLayers, s.threads, s.batchSize, s.kvCachePreset,
+                    s.flashAttentionEnabled, s.mmapEnabled, s.mlockEnabled,
+                    s.keepModelInMemory, s.autoOffloadMinutes)
+        }
+
         let runtime = RuntimePreferences(
             contextLength: max(contextLength, 512),
-            gpuLayers: gpuLayers ?? settings.gpuLayers,
-            threads: settings.threads,
-            batchSize: settings.batchSize,
-            kvCachePreset: settings.kvCachePreset,
-            flashAttentionEnabled: settings.flashAttentionEnabled,
-            mmapEnabled: settings.mmapEnabled,
-            mlockEnabled: settings.mlockEnabled,
-            keepModelInMemory: settings.keepModelInMemory,
-            autoOffloadMinutes: settings.autoOffloadMinutes
+            gpuLayers: settings_gpuLayers,
+            threads: settings_threads,
+            batchSize: settings_batchSize,
+            kvCachePreset: settings_kvCachePreset,
+            flashAttentionEnabled: settings_flashAttention,
+            mmapEnabled: settings_mmap,
+            mlockEnabled: settings_mlock,
+            keepModelInMemory: settings_keepInMemory,
+            autoOffloadMinutes: settings_autoOffload
         )
 
         let entry = try await RuntimeCoordinator.shared.loadModel(
@@ -80,6 +93,7 @@ final class ModelRunner: ObservableObject {
             runtime: runtime
         )
         await updateActiveState(from: entry)
+        let resolvedPath = entry.localPath ?? ""
         await MainActor.run {
             AppLogStore.shared.record(
                 .model,
@@ -87,7 +101,7 @@ final class ModelRunner: ObservableObject {
                 message: "Model loaded successfully.",
                 metadata: [
                     "catalog_id": catalogId,
-                    "resolved_path": entry.localPath ?? ""
+                    "resolved_path": resolvedPath
                 ]
             )
         }
@@ -117,7 +131,7 @@ final class ModelRunner: ObservableObject {
         conversationTurns: [ConversationTurn] = [],
         tools: [InferenceToolDefinition] = [],
         reasoning: InferenceReasoningOptions? = nil,
-        parameters: ModelParameters = .appDefault,
+        parameters: ModelParameters? = nil,
         onToken: @escaping (String) -> Void
     ) async throws -> GenerationResult {
         guard let activeCatalogId else {
@@ -132,13 +146,16 @@ final class ModelRunner: ObservableObject {
             throw ModelError.noModelLoaded
         }
 
-        let currentSnapshot = await MainActor.run {
-            ModelStorage.shared.snapshot(name: activeCatalogId)
+        let resolvedParameters = await MainActor.run { parameters ?? .appDefault }
+
+        let (snapshotContextLength, runtime) = await MainActor.run {
+            let snap = ModelStorage.shared.snapshot(name: activeCatalogId)
+            let rt = RuntimePreferences.fromSettings(
+                AppSettings.shared,
+                contextLength: snap?.runtimeContextLength
+            )
+            return (snap?.runtimeContextLength, rt)
         }
-        let runtime = RuntimePreferences.fromSettings(
-            AppSettings.shared,
-            contextLength: currentSnapshot?.runtimeContextLength
-        )
 
         let result = try await RuntimeCoordinator.shared.generate(
             request: InferenceRequest(
@@ -148,7 +165,7 @@ final class ModelRunner: ObservableObject {
                 conversationTurns: conversationTurns,
                 tools: tools,
                 reasoning: reasoning,
-                parameters: parameters,
+                parameters: resolvedParameters,
                 runtimePreferences: runtime
             )
         ) { chunk in

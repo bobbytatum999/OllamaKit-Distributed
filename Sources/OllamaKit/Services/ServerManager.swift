@@ -142,7 +142,8 @@ final class ServerManager: @unchecked Sendable {
     }
 
     func startServerIfEnabled() async {
-        guard AppSettings.shared.serverEnabled else { return }
+        let serverEnabled = await MainActor.run { AppSettings.shared.serverEnabled }
+        guard serverEnabled else { return }
         await startServer()
     }
 
@@ -200,7 +201,8 @@ final class ServerManager: @unchecked Sendable {
     }
 
     private func allowsConnection(_ connection: NWConnection) -> Bool {
-        guard AppSettings.shared.serverExposureMode != .localOnly else {
+        let isLocalOnly = ServerManager.readServerExposureModeRaw() == "localOnly"
+        guard !isLocalOnly else {
             guard let endpoint = connection.currentPath?.remoteEndpoint else { return false }
             return isLoopbackHost(endpoint)
         }
@@ -317,9 +319,14 @@ final class ServerManager: @unchecked Sendable {
 
         log(category: .app, level: .info, title: "\(method) \(path)", message: "Processing request...", metadata: ["remote": context.remoteAddress ?? "unknown", "request_id": requestID])
 
-        if AppSettings.shared.serverExposureMode.isPublic || AppSettings.shared.requireApiKey {
+        let exposureModeRaw = ServerManager.readServerExposureModeRaw()
+        let isPublicMode = (exposureModeRaw == "publicManaged" || exposureModeRaw == "publicCustom")
+        let requireApiKeyEnabled = UserDefaults.standard.bool(forKey: "requireApiKey")
+        let storedApiKey = UserDefaults.standard.string(forKey: "apiKey") ?? ""
+
+        if isPublicMode || requireApiKeyEnabled {
             let providedKey = headers["authorization"]?.replacingOccurrences(of: "Bearer ", with: "").trimmingCharacters(in: .whitespaces)
-            if providedKey != AppSettings.shared.apiKey {
+            if providedKey != storedApiKey {
                 sendOpenAIErrorResponse(status: 401, message: "Invalid API key.", on: connection, requestID: requestID)
                 return
             }
@@ -1037,5 +1044,11 @@ final class ServerManager: @unchecked Sendable {
         case 501: return "not_implemented_error"
         default: return "server_error"
         }
+    }
+
+    /// Reads the server exposure mode directly from UserDefaults to avoid @MainActor isolation.
+    /// This is safe because the value is a simple string stored in UserDefaults.
+    private static func readServerExposureModeRaw() -> String {
+        UserDefaults.standard.string(forKey: "server_exposure_mode") ?? "localOnly"
     }
 }

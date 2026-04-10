@@ -177,7 +177,7 @@ public struct AnimatedMeshBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase: Double = 0
     
-    var body: some View {
+    public var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
 
