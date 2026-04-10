@@ -226,16 +226,11 @@ final class HuggingFaceService: @unchecked Sendable {
                 request: authorizedRequest(url: url),
                 id: url.absoluteString,
                 progressHandler: { progress in
-                    // Forward progress to caller on the main thread via Task
-                    Task { @MainActor in
-                        AppLogStore.shared.record(
-                            .huggingFace,
-                            level: .debug,
-                            title: "HF Download Progress",
-                            message: "Downloading: \(modelId)",
-                            metadata: ["model_id": modelId, "bytes_written": "\(progress.downloadedBytes)", "total_bytes": "\(progress.totalBytes)"]
-                        )
-                    }
+                    // Forward progress to caller directly — no per-tick logging
+                    // (previous code logged every 300ms tick to AppLogStore via
+                    // Task { @MainActor }, flooding the main thread with hundreds
+                    // of log writes + JSON persistence + SwiftUI @Published diffs,
+                    // which froze the UI and made cancel button unresponsive)
                     progressHandler(progress)
                 }
             )
