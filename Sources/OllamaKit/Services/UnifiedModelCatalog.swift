@@ -22,6 +22,7 @@ extension SamplingParameters {
     }
 }
 
+@MainActor
 struct ModelSnapshot: Identifiable, Hashable, Sendable {
     let catalogId: String
     let sourceModelID: String

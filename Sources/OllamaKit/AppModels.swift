@@ -1541,13 +1541,13 @@ final class SavedAutomation {
 }
 
 public struct AutomationStep: Codable, Identifiable {
-    var id: String
-    var service: String // "llm" | "http" | "notify"
-    var action: String
-    var params: [String: String]
-    var outputKey: String
+    public var id: String
+    public var service: String // "llm" | "http" | "notify"
+    public var action: String
+    public var params: [String: String]
+    public var outputKey: String
 
-    init(id: String = UUID().uuidString, service: String, action: String, params: [String: String] = [:], outputKey: String = "") {
+    public init(id: String = UUID().uuidString, service: String, action: String, params: [String: String] = [:], outputKey: String = "") {
         self.id = id
         self.service = service
         self.action = action

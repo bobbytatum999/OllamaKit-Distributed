@@ -76,7 +76,7 @@ actor AutomationRunner {
         guard (tagsResponse as? HTTPURLResponse)?.statusCode == 200 else {
             throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
         }
-        let tagsResult = try JSONDecoder().decode([String: [AnyAutomationCodable]].self, from: tagsData)
+        let tagsResult = try JSONDecoder().decode([String: AnyAutomationCodable].self, from: tagsData)
         
         let modelsWrapper = tagsResult["models"]?.value as? [[String: AnyAutomationCodable]]
         guard let models = modelsWrapper,
