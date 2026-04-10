@@ -1533,7 +1533,7 @@ class ModelSearchViewModel: ObservableObject {
         }
 
         do {
-            let model = try await HuggingFaceService.shared.downloadModel(
+            let seed = try await HuggingFaceService.shared.downloadModel(
                 from: file.url,
                 filename: file.filename,
                 modelId: modelId
@@ -1542,12 +1542,21 @@ class ModelSearchViewModel: ObservableObject {
                     self.downloadProgress = progress.percentage
                     self.downloadBytes = "\(progress.formattedDownloaded) / \(progress.formattedTotal)"
                     if progress.speed > 0 {
-                        self.downloadSpeed = ByteCountFormatter.string(fromByteCount: Int64(progress.speed), countStyle: .file) + "/s"
-                        let remaining = Int64((1.0 - progress.progress) / progress.progress * (Double(Date().timeIntervalSince1970) - self.downloadStartTime.timeIntervalSince1970))
-                        if remaining > 0 && remaining < 86400 {
-                            let mins = Int(remaining) / 60
-                            let secs = Int(remaining) % 60
-                            self.downloadEta = "\(mins)m \(secs)s remaining"
+                        self.downloadSpeed = progress.formattedSpeed
+                        // FIX: Use speed-based ETA calculation instead of broken ratio formula.
+                        // Old formula used elapsed * (1-progress)/progress which gives wildly wrong
+                        // results at low progress values. Speed-based is accurate from the start.
+                        let remainingBytes = Double(progress.totalBytes - progress.downloadedBytes)
+                        let remainingSeconds = Int64(remainingBytes / progress.speed)
+                        if remainingSeconds > 0 && remainingSeconds < 86400 {
+                            let hours = Int(remainingSeconds) / 3600
+                            let mins = (Int(remainingSeconds) % 3600) / 60
+                            let secs = Int(remainingSeconds) % 60
+                            if hours > 0 {
+                                self.downloadEta = "\(hours)h \(mins)m remaining"
+                            } else {
+                                self.downloadEta = "\(mins)m \(secs)s remaining"
+                            }
                         } else {
                             self.downloadEta = ""
                         }
@@ -1555,8 +1564,10 @@ class ModelSearchViewModel: ObservableObject {
                 }
             }
 
-            await ModelStorage.shared.upsertDownloadedModel(model.registrySeed)
-            if let snapshot = ModelStorage.shared.snapshot(name: model.apiIdentifier),
+            // FIX: downloadModel now returns DownloadedModelSeed directly
+            // (not a @Model DownloadedModel that would crash off MainActor)
+            await ModelStorage.shared.upsertDownloadedModel(seed)
+            if let snapshot = ModelStorage.shared.snapshot(name: seed.name),
                snapshot.backendKind == .ggufLlama,
                !snapshot.isValidatedRunnable
             {
@@ -2213,7 +2224,7 @@ struct FeaturedModelCard: View {
                 )
 
                 // Real download with progress
-                let downloaded = try await HuggingFaceService.shared.downloadModel(
+                let seed = try await HuggingFaceService.shared.downloadModel(
                     from: candidate.file.url,
                     filename: candidate.file.filename,
                     modelId: candidate.model.modelId
@@ -2223,17 +2234,7 @@ struct FeaturedModelCard: View {
                     }
                 }
 
-                // Upsert into storage with correct local path from the download result
-                let seed = DownloadedModelSeed(
-                    modelId: candidate.model.modelId,
-                    name: downloaded.name,
-                    localPath: downloaded.localPath,
-                    size: downloaded.size,
-                    quantization: downloaded.quantization,
-                    parameters: downloaded.parameters,
-                    contextLength: downloaded.contextLength,
-                    serverCapabilities: nil
-                )
+                // FIX: downloadModel now returns DownloadedModelSeed directly, use it as-is
                 await ModelStorage.shared.upsertDownloadedModel(seed)
 
                 HapticManager.notification(.success)

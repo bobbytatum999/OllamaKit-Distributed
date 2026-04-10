@@ -206,6 +206,11 @@ struct OnboardingView: View {
     @Binding var hasCompletedOnboarding: Bool
     @State private var currentPage = 0
     @State private var selectedOnboardingModel: String?
+    @State private var isDownloading = false
+    @State private var downloadProgress = 0
+    @State private var downloadSpeed = ""
+    @State private var downloadEta = ""
+    @State private var downloadError: String?
     @StateObject private var modelStore = ModelStorage.shared
 
     private let recommendedModels: [(id: String, displayName: String, description: String, size: String)] = [
@@ -218,72 +223,485 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            Color(hex: "0F0F23").ignoresSafeArea()
+            AnimatedMeshBackground()
 
-            TabView(selection: $currentPage) {
-                OnboardingPage(
-                    icon: "cpu",
-                    title: "Welcome to OllamaKit",
-                    subtitle: "Run local AI models directly on your iPhone",
-                    selectedModel: $selectedOnboardingModel
-                )
-                .tag(0)
-
-                OnboardingPage(
-                    icon: "arrow.down.circle",
-                    title: "Download Models",
-                    subtitle: "Browse thousands of GGUF models from HuggingFace. Downloads stay on your device.",
-                    selectedModel: $selectedOnboardingModel
-                )
-                .tag(1)
-
-                OnboardingPage(
-                    icon: "server.rack",
-                    title: "API Server",
-                    subtitle: "Expose a local API server and use OllamaKit as a backend for any app",
-                    selectedModel: $selectedOnboardingModel
-                )
-                .tag(2)
-
-                OnboardingPage(
-                    icon: "checkmark.circle",
-                    title: "Ready to Go",
-                    subtitle: "Pick a model to get started — we recommend smaller models for your first download",
-                    showModelPicker: true,
-                    onModelSelected: { modelId in
-                        selectedOnboardingModel = modelId
-                    },
-                    recommendedModels: recommendedModels,
-                    selectedModel: $selectedOnboardingModel
-                )
-                .tag(3)
-            }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-
-            VStack {
-                Spacer()
-                if currentPage < 3 {
-                    Button("Skip") {
-                        hasCompletedOnboarding = true
+            VStack(spacing: 0) {
+                // Top bar with Skip button (top-right, liquid glass style)
+                HStack {
+                    Spacer()
+                    if currentPage < 3 && !isDownloading {
+                        Button {
+                            hasCompletedOnboarding = true
+                        } label: {
+                            Text("Skip")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.8))
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(
+                                    Capsule()
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(.white.opacity(0.2), lineWidth: 0.6)
+                                        )
+                                )
+                        }
                     }
-                    .font(.caption)
-                    .foregroundStyle(.gray)
-                    .padding(.bottom, 20)
-                } else {
-                    Button(selectedOnboardingModel != nil ? "Download \(recommendedModels.first(where: { $0.id == selectedOnboardingModel })?.displayName ?? "Model")" : "Get Started") {
-                        hasCompletedOnboarding = true
-                    }
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 14)
-                    .background(Color(hex: "8B5CF6"))
-                    .clipShape(Capsule())
-                    .padding(.bottom, 40)
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+
+                TabView(selection: $currentPage) {
+                    onboardingWelcomePage
+                        .tag(0)
+
+                    onboardingModelsPage
+                        .tag(1)
+
+                    onboardingServerPage
+                        .tag(2)
+
+                    onboardingReadyPage
+                        .tag(3)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .always))
+                .animation(.easeInOut(duration: 0.3), value: currentPage)
+
+                // Bottom action area
+                bottomActionArea
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 40)
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    // MARK: - Pages
+
+    private var onboardingWelcomePage: some View {
+        VStack(spacing: 28) {
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color(hex: "8B5CF6").opacity(0.3), Color(hex: "8B5CF6").opacity(0.05)],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 80
+                        )
+                    )
+                    .frame(width: 160, height: 160)
+
+                Image(systemName: "cpu")
+                    .font(.system(size: 64, weight: .thin))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(hex: "A78BFA"), Color(hex: "8B5CF6")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+
+            VStack(spacing: 12) {
+                Text("Welcome to")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+
+                Text("OllamaKit")
+                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.white, Color(hex: "A78BFA")],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+            }
+
+            Text("Run powerful AI models directly on your iPhone.\nPrivate, fast, and completely offline.")
+                .font(.system(size: 17))
+                .foregroundStyle(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
+                .padding(.horizontal, 40)
+
+            Spacer()
+            Spacer()
+        }
+    }
+
+    private var onboardingModelsPage: some View {
+        VStack(spacing: 28) {
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.cyan.opacity(0.25), Color.cyan.opacity(0.05)],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 80
+                        )
+                    )
+                    .frame(width: 160, height: 160)
+
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 64, weight: .thin))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.cyan, .blue],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+
+            VStack(spacing: 12) {
+                Text("Download Models")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(.white)
+
+                Text("Browse thousands of GGUF models from HuggingFace.\nDownloads stay on your device — always private.")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+                    .padding(.horizontal, 36)
+            }
+
+            Spacer()
+            Spacer()
+        }
+    }
+
+    private var onboardingServerPage: some View {
+        VStack(spacing: 28) {
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.green.opacity(0.25), Color.green.opacity(0.05)],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 80
+                        )
+                    )
+                    .frame(width: 160, height: 160)
+
+                Image(systemName: "server.rack")
+                    .font(.system(size: 64, weight: .thin))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.green, .mint],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+
+            VStack(spacing: 12) {
+                Text("API Server")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(.white)
+
+                Text("Expose a local Ollama-compatible API server\nand use OllamaKit as a backend for any app.")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+                    .padding(.horizontal, 36)
+            }
+
+            Spacer()
+            Spacer()
+        }
+    }
+
+    private var onboardingReadyPage: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            VStack(spacing: 12) {
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 48, weight: .thin))
+                    .foregroundStyle(Color(hex: "8B5CF6"))
+
+                Text("Ready to Go")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(.white)
+
+                Text("Pick a model to get started")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+
+            // Model picker with liquid glass cards
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(recommendedModels, id: \.id) { model in
+                        Button {
+                            if selectedOnboardingModel == model.id {
+                                selectedOnboardingModel = nil
+                            } else {
+                                selectedOnboardingModel = model.id
+                            }
+                        } label: {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(
+                                            selectedOnboardingModel == model.id
+                                                ? Color(hex: "8B5CF6").opacity(0.25)
+                                                : Color.white.opacity(0.06)
+                                        )
+                                        .frame(width: 44, height: 44)
+
+                                    Image(systemName: "cube.fill")
+                                        .font(.system(size: 18, weight: .medium))
+                                        .foregroundStyle(
+                                            selectedOnboardingModel == model.id
+                                                ? Color(hex: "A78BFA")
+                                                : .white.opacity(0.4)
+                                        )
+                                }
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(model.displayName)
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                    Text(model.description)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.white.opacity(0.5))
+                                }
+
+                                Spacer()
+
+                                Text(model.size)
+                                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.4))
+
+                                if selectedOnboardingModel == model.id {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 22))
+                                        .foregroundStyle(Color(hex: "8B5CF6"))
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .stroke(
+                                                selectedOnboardingModel == model.id
+                                                    ? Color(hex: "8B5CF6").opacity(0.5)
+                                                    : Color.white.opacity(0.1),
+                                                lineWidth: selectedOnboardingModel == model.id ? 1.5 : 0.6
+                                            )
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isDownloading)
+                    }
+                }
+                .padding(.horizontal, 28)
+            }
+            .scrollIndicators(.hidden)
+
+            // Download progress (shown inline during download)
+            if isDownloading {
+                VStack(spacing: 8) {
+                    ProgressView(value: Double(downloadProgress) / 100.0)
+                        .tint(Color(hex: "8B5CF6"))
+
+                    HStack {
+                        Text("Downloading… \(downloadProgress)%")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.7))
+                        Spacer()
+                        if !downloadSpeed.isEmpty {
+                            Text(downloadSpeed)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.5))
+                        }
+                    }
+                    if !downloadEta.isEmpty {
+                        Text(downloadEta)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                }
+                .padding(.horizontal, 28)
+            }
+
+            if let error = downloadError {
+                Text(error)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.red.opacity(0.8))
+                    .padding(.horizontal, 28)
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Bottom Action
+
+    @ViewBuilder
+    private var bottomActionArea: some View {
+        if currentPage < 3 {
+            // "Next" button for pages 0-2
+            Button {
+                withAnimation { currentPage += 1 }
+            } label: {
+                Text("Continue")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(hex: "8B5CF6"), Color(hex: "7C3AED")],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    )
+            }
+        } else if isDownloading {
+            // During download: show skip option
+            Button {
+                hasCompletedOnboarding = true
+            } label: {
+                Text("Continue in Background")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(.white.opacity(0.15), lineWidth: 0.6)
+                            )
+                    )
+            }
+        } else {
+            // Ready page: Get Started or Download & Start
+            Button {
+                if let modelId = selectedOnboardingModel {
+                    startOnboardingDownload(modelId: modelId)
+                } else {
+                    hasCompletedOnboarding = true
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if selectedOnboardingModel != nil {
+                        Image(systemName: "arrow.down.circle.fill")
+                    }
+                    Text(selectedOnboardingModel != nil
+                        ? "Download \(recommendedModels.first(where: { $0.id == selectedOnboardingModel })?.displayName ?? "Model")"
+                        : "Get Started")
+                }
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(hex: "8B5CF6"), Color(hex: "7C3AED")],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                )
+            }
+
+            if selectedOnboardingModel != nil {
+                Button {
+                    hasCompletedOnboarding = true
+                } label: {
+                    Text("Skip for Now")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                .padding(.top, 8)
+            }
+        }
+    }
+
+    // MARK: - Download Logic
+
+    private func startOnboardingDownload(modelId: String) {
+        isDownloading = true
+        downloadProgress = 0
+        downloadSpeed = ""
+        downloadEta = ""
+        downloadError = nil
+
+        Task { @MainActor in
+            do {
+                let runtimeProfile = await DeviceCapabilityService.shared.currentRuntimeProfile()
+                let candidate = try await HuggingFaceService.shared.resolvePullCandidate(
+                    requestedName: modelId,
+                    requestedFilename: nil,
+                    runtimeProfile: runtimeProfile
+                )
+
+                let seed = try await HuggingFaceService.shared.downloadModel(
+                    from: candidate.file.url,
+                    filename: candidate.file.filename,
+                    modelId: candidate.model.modelId
+                ) { progress in
+                    Task { @MainActor in
+                        self.downloadProgress = progress.percentage
+                        if progress.speed > 0 {
+                            self.downloadSpeed = progress.formattedSpeed
+                            let remainingBytes = Double(progress.totalBytes - progress.downloadedBytes)
+                            let remainingSeconds = Int(remainingBytes / progress.speed)
+                            if remainingSeconds > 0 && remainingSeconds < 86400 {
+                                let hours = remainingSeconds / 3600
+                                let mins = (remainingSeconds % 3600) / 60
+                                let secs = remainingSeconds % 60
+                                if hours > 0 {
+                                    self.downloadEta = "\(hours)h \(mins)m remaining"
+                                } else {
+                                    self.downloadEta = "\(mins)m \(secs)s remaining"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                await ModelStorage.shared.upsertDownloadedModel(seed)
+                HapticManager.notification(.success)
+                isDownloading = false
+
+                // Dismiss onboarding after successful download
+                hasCompletedOnboarding = true
+            } catch {
+                isDownloading = false
+                if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled {
+                    return
+                }
+                downloadError = error.localizedDescription
+                HapticManager.notification(.error)
+            }
+        }
     }
 }
 
@@ -310,53 +728,6 @@ struct OnboardingPage: View {
                 .foregroundStyle(.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
-
-            if showModelPicker {
-                VStack(spacing: 12) {
-                    ForEach(recommendedModels, id: \.id) { model in
-                        Button {
-                            if selectedModel == model.id {
-                                selectedModel = nil
-                                onModelSelected?(nil)
-                            } else {
-                                selectedModel = model.id
-                                onModelSelected?(model.id)
-                            }
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(model.displayName)
-                                        .font(.system(size: 15, weight: .semibold))
-                                    Text(model.description)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(model.size)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                                if selectedModel == model.id {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(Color(hex: "8B5CF6"))
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(selectedModel == model.id ? Color(hex: "8B5CF6").opacity(0.15) : Color.white.opacity(0.05))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(selectedModel == model.id ? Color(hex: "8B5CF6").opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1)
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 32)
-            }
-
             Spacer()
             Spacer()
         }

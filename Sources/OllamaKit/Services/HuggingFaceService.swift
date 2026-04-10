@@ -202,7 +202,7 @@ final class HuggingFaceService: @unchecked Sendable {
         filename: String,
         modelId: String,
         progressHandler: @escaping @Sendable (DownloadProgress) -> Void
-    ) async throws -> DownloadedModel {
+    ) async throws -> DownloadedModelSeed {
         await log(.huggingFace, level: .info, title: "HF Model Download Started", message: "Downloading: \(modelId)", metadata: ["model_id": modelId, "file": filename])
 
         try ModelPathHelper.ensureModelsDirectoryExists()
@@ -259,16 +259,18 @@ final class HuggingFaceService: @unchecked Sendable {
 
             let defaultContextLength = await MainActor.run { AppSettings.shared.defaultContextLength }
 
-            return DownloadedModel(
-                name: filename.replacingOccurrences(of: ".gguf", with: ""),
+            // FIX: Return a plain DownloadedModelSeed struct instead of a @Model DownloadedModel.
+            // DownloadedModel is @MainActor (SwiftData @Model) and creating it here (off the main
+            // thread) would crash under Swift 6 strict concurrency.
+            return DownloadedModelSeed(
                 modelId: modelId,
+                name: filename.replacingOccurrences(of: ".gguf", with: ""),
                 localPath: destinationURL.path,
                 size: fileSize,
-                downloadDate: .now,
-                isDownloaded: true,
                 quantization: extractQuantization(from: filename) ?? "GGUF",
                 parameters: inferParameterSize(from: filename),
-                contextLength: defaultContextLength
+                contextLength: defaultContextLength,
+                serverCapabilities: nil
             )
         } catch {
             try? FileManager.default.removeItem(at: stagedURL)
