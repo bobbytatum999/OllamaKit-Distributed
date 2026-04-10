@@ -438,7 +438,7 @@ final class DownloadedModel {
     }
 
     var runtimeContextLength: Int {
-        max(AppSettings.shared.defaultContextLength, 512)
+        AppSettings.shared.defaultContextLength
     }
 
     var persistentReference: String {
