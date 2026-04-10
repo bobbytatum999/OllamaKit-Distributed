@@ -52,7 +52,13 @@ final class ServerManager: @unchecked Sendable {
         log(category: .app, level: .info, title: "Starting Server", message: "Initializing network listener on port \(configuredPort)...")
 
         do {
-            let port = NWEndpoint.Port(rawValue: configuredPort)!
+            guard let port = NWEndpoint.Port(rawValue: configuredPort) ?? NWEndpoint.Port(rawValue: 11434) else {
+                stateLock.lock()
+                isStarting = false
+                stateLock.unlock()
+                log(category: .app, level: .error, title: "Startup Failed", message: "Invalid server port: \(configuredPort)")
+                return
+            }
             let parameters = NWParameters.tcp
             parameters.allowLocalEndpointReuse = true
 

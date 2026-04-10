@@ -1342,7 +1342,7 @@ struct ModelComparisonSheet: View {
                     parameters: .appDefault
                 ) { _ in }
                 await MainActor.run {
-                    response1 = result.text ?? ""
+                    response1 = result.text
                     isRunning1 = false
                 }
             } catch {
@@ -1370,7 +1370,7 @@ struct ModelComparisonSheet: View {
                     parameters: .appDefault
                 ) { _ in }
                 await MainActor.run {
-                    response2 = result.text ?? ""
+                    response2 = result.text
                     isRunning2 = false
                 }
             } catch {
