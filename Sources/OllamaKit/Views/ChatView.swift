@@ -946,7 +946,8 @@ class ChatViewModel: ObservableObject {
     @Published var tokensPerSecond: Double = 0
     @Published var generationStartTime: Date?
 
-    func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters = .appDefault, imageData: [Data]? = nil) async {
+    func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters? = nil, imageData: [Data]? = nil) async {
+        let parameters = parameters ?? .appDefault
         lastSentMessage = content
         guard let model = currentModel else {
             AppLogStore.shared.record(
