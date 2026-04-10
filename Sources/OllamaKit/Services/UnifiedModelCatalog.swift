@@ -8,6 +8,7 @@ typealias ModelError = InferenceError
 typealias ModelParameters = SamplingParameters
 
 extension SamplingParameters {
+    @MainActor
     static var appDefault: SamplingParameters {
         let settings = AppSettings.shared
         return SamplingParameters(
@@ -196,7 +197,8 @@ struct ModelSnapshot: Identifiable, Hashable, Sendable {
     }
 
     var configuredAgentCapabilityOverride: ModelAgentCapabilityOverride? {
-        AppSettings.shared.agentCapabilityOverride(for: catalogId)
+        let settings = AppSettings.shared
+        return settings.agentCapabilityOverride(for: catalogId)
     }
 
     var hasAgentCapabilityOverride: Bool {
@@ -267,6 +269,7 @@ struct ModelSnapshot: Identifiable, Hashable, Sendable {
 }
 
 extension RuntimePreferences {
+    @MainActor
     static func fromSettings(_ settings: AppSettings = .shared, contextLength: Int? = nil) -> RuntimePreferences {
         RuntimePreferences(
             contextLength: max(contextLength ?? settings.defaultContextLength, 512),
