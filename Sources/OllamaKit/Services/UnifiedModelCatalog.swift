@@ -271,7 +271,7 @@ struct ModelSnapshot: Identifiable, Hashable, Sendable {
 extension RuntimePreferences {
     @MainActor
     static func fromSettings(_ settings: AppSettings = .shared, contextLength: Int? = nil) -> RuntimePreferences {
-        RuntimePreferences(
+        return RuntimePreferences(
             contextLength: max(contextLength ?? settings.defaultContextLength, 512),
             gpuLayers: settings.gpuLayers,
             threads: settings.threads,

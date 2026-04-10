@@ -228,7 +228,11 @@ struct CreateAutomationView: View {
 
             let (data, _) = try await URLSession.shared.data(for: request)
             let response = try JSONDecoder().decode([String: AnyAutomationCodable].self, from: data)
-            let content = (response["message"] as? [String: AnyAutomationCodable])?["content"]?.value as? String ?? ""
+            
+            // Access the dictionary value inside AnyAutomationCodable before casting
+            let messageWrapper = response["message"]
+            let messageDict = messageWrapper?.value as? [String: AnyAutomationCodable]
+            let content = messageDict?["content"]?.value as? String ?? ""
 
             // Clean the response - strip markdown code blocks if present
             var jsonString = content.trimmingCharacters(in: .whitespacesAndNewlines)
