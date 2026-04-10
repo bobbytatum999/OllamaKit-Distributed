@@ -575,6 +575,7 @@ enum BuiltInModelCatalog {
     static let appleOnDeviceModelID = SystemModelCatalog.appleFoundationCatalogID
     static let appleOnDeviceModelName = SystemModelCatalog.appleFoundationModelName
 
+    @MainActor
     static func appleOnDeviceModel() -> ModelSnapshot {
         ModelSnapshot(
             entry: SystemModelCatalog.appleFoundationEntry(
