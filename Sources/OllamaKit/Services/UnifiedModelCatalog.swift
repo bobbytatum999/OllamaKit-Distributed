@@ -327,7 +327,6 @@ final class ModelStorage: ObservableObject {
     func bootstrap() async {
         await migrateLegacyModelsIfNeeded()
         await refresh()
-        await validatePendingGGUFModels()
     }
 
     func refresh() async {
@@ -351,7 +350,6 @@ final class ModelStorage: ObservableObject {
                 contextLength: seed.contextLength,
                 serverCapabilities: seed.serverCapabilities
             )
-            _ = await validateModel(catalogId: entry.catalogId)
             await refresh()
         } catch {
             print("Failed to upsert downloaded model into registry: \(error)")
@@ -363,7 +361,6 @@ final class ModelStorage: ObservableObject {
             from: sourceURL,
             defaultContextLength: AppSettings.shared.defaultContextLength
         )
-        _ = await validateModel(catalogId: entry.catalogId)
         await refresh()
         return snapshot(name: entry.catalogId) ?? ModelSnapshot(entry: entry)
     }

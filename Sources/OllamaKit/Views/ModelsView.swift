@@ -465,6 +465,14 @@ struct DownloadedModelRow: View {
     }
 
     private func revalidateModel() {
+        if model.importSource == .localImport || model.importSource == .coreMLImport {
+            viewModel.alertTitle = "Validation Temporarily Disabled"
+            viewModel.errorMessage = "Imported models can currently crash during recalibration on some builds. Remove and re-import the model instead."
+            viewModel.showError = true
+            HapticManager.notification(.warning)
+            return
+        }
+
         Task {
             let validatedSnapshot = await ModelRunner.shared.validateModel(catalogId: model.catalogId)
             viewModel.alertTitle = "Validation"
