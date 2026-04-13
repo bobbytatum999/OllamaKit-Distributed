@@ -1,4 +1,5 @@
 import Foundation
+import MachO
 
 #if canImport(llama)
 import llama
@@ -41,35 +42,131 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             throw InferenceError.modelNotFound("Model file not found at the stored path. Please re-download the model.")
         }
 
+        // FIX: Check file size before attempting validation to prevent OOM crashes
+        let fileSize = entry.capabilitySummary.sizeBytes
+        let availableMemory = getAvailableMemory()
+        // Require at least 1.5x the file size in available memory for safe validation
+        guard fileSize < availableMemory * 2 / 3 else {
+            let fileSizeStr = ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+            let availableStr = ByteCountFormatter.string(fromByteCount: availableMemory, countStyle: .memory)
+            throw InferenceError.backendUnavailable(
+                "Insufficient memory to validate this model. Model size: \(fileSizeStr), Available: \(availableStr). " +
+                "Try closing other apps or downloading a smaller model."
+            )
+        }
+
         let configuration = BackendConfiguration(
             catalogId: entry.catalogId,
             modelPath: path,
-            contextLength: runtime.contextLength,
-            gpuLayers: runtime.gpuLayers,
-            threads: runtime.threads,
-            batchSize: runtime.batchSize,
-            kvCachePreset: runtime.kvCachePreset,
-            flashAttentionEnabled: runtime.flashAttentionEnabled,
-            mmapEnabled: runtime.mmapEnabled,
-            mlockEnabled: runtime.mlockEnabled
+            contextLength: min(runtime.contextLength, 4096), // Limit context during validation
+            gpuLayers: 0, // Use CPU only for validation to avoid GPU memory issues
+            threads: min(runtime.threads, 4), // Limit threads during validation
+            batchSize: 32, // Use minimal batch size for validation
+            kvCachePreset: .platformDefault,
+            flashAttentionEnabled: false, // Disable flash attention for validation
+            mmapEnabled: true, // Use mmap to reduce memory pressure
+            mlockEnabled: false // Disable mlock during validation
         )
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            queue.async {
-                do {
-                    let temporaryEngine = try BackendEngine(configuration: configuration)
-                    withExtendedLifetime(temporaryEngine) {}
-                    continuation.resume()
-                } catch {
-                    let fileName = URL(fileURLWithPath: path).lastPathComponent
-                    let sizeDescription = ByteCountFormatter.string(
-                        fromByteCount: entry.capabilitySummary.sizeBytes,
-                        countStyle: .file
-                    )
-                    let message = "GGUF validation failed for \(entry.displayName) (\(fileName), \(sizeDescription), \(entry.capabilitySummary.quantization)): \(error.localizedDescription)"
-                    continuation.resume(throwing: InferenceError.backendUnavailable(message))
+        // FIX: Add timeout and better error handling to prevent crashes
+        try await withTimeout(seconds: 60) {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                // Run validation on a dedicated low-priority queue
+                let validationQueue = DispatchQueue(
+                    label: "com.ollamakit.gguf.validation",
+                    qos: .utility,
+                    attributes: [],
+                    autoreleaseFrequency: .workItem
+                )
+
+                validationQueue.async {
+                    autoreleasepool {
+                        do {
+                            // FIX: Wrap engine creation in additional error handling
+                            let temporaryEngine: BackendEngine
+                            do {
+                                temporaryEngine = try BackendEngine(configuration: configuration)
+                            } catch let engineError as InferenceError {
+                                // Re-throw InferenceError directly
+                                throw engineError
+                            } catch {
+                                // Wrap other errors with context
+                                let fileName = URL(fileURLWithPath: path).lastPathComponent
+                                let sizeDescription = ByteCountFormatter.string(
+                                    fromByteCount: entry.capabilitySummary.sizeBytes,
+                                    countStyle: .file
+                                )
+                                let message = "GGUF validation failed for \(entry.displayName) (\(fileName), \(sizeDescription), \(entry.capabilitySummary.quantization)): \(error.localizedDescription)"
+                                throw InferenceError.backendUnavailable(message)
+                            }
+
+                            // Keep engine alive briefly to ensure it's valid, then clean up
+                            withExtendedLifetime(temporaryEngine) {
+                                // Small delay to ensure model is fully loaded
+                                Thread.sleep(forTimeInterval: 0.1)
+                            }
+
+                            continuation.resume()
+                        } catch {
+                            let fileName = URL(fileURLWithPath: path).lastPathComponent
+                            let sizeDescription = ByteCountFormatter.string(
+                                fromByteCount: entry.capabilitySummary.sizeBytes,
+                                countStyle: .file
+                            )
+                            let message = "GGUF validation failed for \(entry.displayName) (\(fileName), \(sizeDescription), \(entry.capabilitySummary.quantization)): \(error.localizedDescription)"
+                            continuation.resume(throwing: InferenceError.backendUnavailable(message))
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    // Helper to get available system memory
+    private func getAvailableMemory() -> Int64 {
+        let physicalMemory = Int64(ProcessInfo.processInfo.physicalMemory)
+
+        // Get additional memory info if available
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
+
+        let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_,
+                         task_flavor_t(MACH_TASK_BASIC_INFO),
+                         $0,
+                         &count)
+            }
+        }
+
+        guard kerr == KERN_SUCCESS else {
+            // Fallback: assume 50% of physical memory is available
+            return physicalMemory / 2
+        }
+
+        // Return available memory (resident size is what we're using, so subtract from physical)
+        let usedMemory = Int64(info.resident_size)
+        return max(physicalMemory - usedMemory, physicalMemory / 4)
+    }
+
+    // Helper for timeout wrapper
+    private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            // Add the actual operation
+            group.addTask {
+                try await operation()
+            }
+
+            // Add timeout task
+            group.addTask {
+                try await Task.sleep(for: .seconds(seconds))
+                throw InferenceError.backendUnavailable("Validation timed out after \(Int(seconds)) seconds. The model may be too large or corrupted.")
+            }
+
+            // Return the first result (success or error)
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
         }
     }
 

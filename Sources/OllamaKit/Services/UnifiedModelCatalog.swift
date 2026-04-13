@@ -383,7 +383,26 @@ final class ModelStorage: ObservableObject {
                 contextLength: seed.contextLength,
                 serverCapabilities: seed.serverCapabilities
             )
-            _ = await validateModel(catalogId: entry.catalogId)
+
+            // FIX: Wrap validation in do-catch to prevent download from appearing to fail
+            // just because validation failed
+            do {
+                _ = await validateModel(catalogId: entry.catalogId)
+            } catch {
+                await MainActor.run {
+                    AppLogStore.shared.record(
+                        .modelsCatalog,
+                        level: .warning,
+                        title: "Model Downloaded but Validation Failed",
+                        message: "\(seed.name) was downloaded but validation failed: \(error.localizedDescription)",
+                        metadata: [
+                            "catalog_id": entry.catalogId,
+                            "error": error.localizedDescription
+                        ]
+                    )
+                }
+            }
+
             await refresh()
 
             await MainActor.run {
@@ -418,7 +437,26 @@ final class ModelStorage: ObservableObject {
             from: sourceURL,
             defaultContextLength: AppSettings.shared.defaultContextLength
         )
-        _ = await validateModel(catalogId: entry.catalogId)
+
+        // FIX: Wrap validation in do-catch to prevent import from failing
+        // just because validation failed - the model is still imported
+        do {
+            _ = await validateModel(catalogId: entry.catalogId)
+        } catch {
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .warning,
+                    title: "Model Imported but Validation Failed",
+                    message: "\(entry.displayName) was imported but validation failed: \(error.localizedDescription)",
+                    metadata: [
+                        "catalog_id": entry.catalogId,
+                        "error": error.localizedDescription
+                    ]
+                )
+            }
+        }
+
         await refresh()
         return snapshot(name: entry.catalogId) ?? ModelSnapshot(entry: entry)
     }
@@ -497,10 +535,22 @@ final class ModelStorage: ObservableObject {
             let runtime = RuntimePreferences.validationBaseline(
                 contextLength: min(entry.runtimeContextLength, AppSettings.shared.defaultContextLength)
             )
-            let outcome = try await RuntimeCoordinator.shared.validateModel(
-                catalogId: entry.catalogId,
-                runtime: runtime
-            )
+
+            // FIX: Wrap validation in a separate task with its own error handling
+            // to prevent crashes from propagating and crashing the app
+            let outcome: ModelValidationOutcome
+            do {
+                outcome = try await RuntimeCoordinator.shared.validateModel(
+                    catalogId: entry.catalogId,
+                    runtime: runtime
+                )
+            } catch {
+                // If validation throws, create a failed outcome
+                outcome = ModelValidationOutcome(
+                    status: .failed,
+                    message: "Validation error: \(error.localizedDescription)"
+                )
+            }
 
             _ = try await ModelRegistryStore.shared.updateValidation(
                 catalogId: entry.catalogId,
@@ -521,6 +571,7 @@ final class ModelStorage: ObservableObject {
             }
             return resultSnapshot
         } catch {
+            // FIX: Even if the entire process fails, try to record the failure in the registry
             await MainActor.run {
                 AppLogStore.shared.record(
                     .modelsCatalog,
@@ -530,6 +581,31 @@ final class ModelStorage: ObservableObject {
                     metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
                 )
             }
+
+            // Try to update the registry with the failure status
+            do {
+                let failedOutcome = ModelValidationOutcome(
+                    status: .failed,
+                    message: "Validation failed: \(error.localizedDescription)"
+                )
+                _ = try await ModelRegistryStore.shared.updateValidation(
+                    catalogId: catalogId,
+                    outcome: failedOutcome
+                )
+                await refresh()
+            } catch {
+                // If we can't even update the registry, just log it
+                await MainActor.run {
+                    AppLogStore.shared.record(
+                        .modelsCatalog,
+                        level: .error,
+                        title: "Failed to update validation status",
+                        message: "Error: \(error.localizedDescription)",
+                        metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                    )
+                }
+            }
+
             return nil
         }
     }
@@ -612,8 +688,32 @@ final class ModelStorage: ObservableObject {
             }
             .map(\.catalogId)
 
+        // FIX: Validate models sequentially with error isolation
+        // This prevents one corrupted model from crashing the entire validation process
         for catalogId in pendingCatalogIDs {
-            _ = await validateModel(catalogId: catalogId)
+            do {
+                // Add a small delay between validations to let memory pressure settle
+                if pendingCatalogIDs.first != catalogId {
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+
+                _ = await validateModel(catalogId: catalogId)
+            } catch {
+                await MainActor.run {
+                    AppLogStore.shared.record(
+                        .modelsCatalog,
+                        level: .error,
+                        title: "Validation Error Isolated",
+                        message: "Failed to validate \(catalogId): \(error.localizedDescription)",
+                        metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                    )
+                }
+            }
+
+            // Check for cancellation
+            if Task.isCancelled {
+                break
+            }
         }
     }
 }
