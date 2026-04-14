@@ -13,16 +13,17 @@ import FoundationModels
 #endif
 
 // FIX: changed from 'actor' to final class. The interfaceKind() method uses
-// UIDevice.current which is main-thread-only, so it is marked @MainActor.
-// Callers use MainActor.assumeIsolated for sync access to the singleton.
+// UIDevice.current which is main-thread-only, so callers must hop to MainActor
+// explicitly instead of assuming they're already isolated there.
 public final class DeviceCapabilityService {
     public static let shared = DeviceCapabilityService()
 
-    public func currentProfile() -> DeviceProfile {
-        currentRuntimeProfile().compatibilityProfile
+    public func currentProfile() async -> DeviceProfile {
+        let runtimeProfile = await currentRuntimeProfile()
+        return runtimeProfile.compatibilityProfile
     }
 
-    public func currentRuntimeProfile() -> DeviceRuntimeProfile {
+    public func currentRuntimeProfile() async -> DeviceRuntimeProfile {
         let physicalMemory = Int64(ProcessInfo.processInfo.physicalMemory)
         let machineIdentifier = machineIdentifier()
         let recommendedBudget = max(
@@ -40,7 +41,7 @@ public final class DeviceCapabilityService {
             chipFamily: chipFamily(for: machineIdentifier),
             systemVersion: systemVersionString(),
             physicalMemoryBytes: physicalMemory,
-            interfaceKind: MainActor.assumeIsolated { interfaceKind() },
+            interfaceKind: await MainActor.run { interfaceKind() },
             recommendedGGUFBudgetBytes: recommendedBudget,
             supportedGGUFBudgetBytes: supportedBudget,
             hasMetalDevice: metalDevice != nil,
@@ -60,7 +61,7 @@ public final class DeviceCapabilityService {
     }
 
     public func compatibilityForGGUFSize(_ sizeBytes: Int64?) async -> CompatibilityReport {
-        let profile = currentRuntimeProfile()
+        let profile = await currentRuntimeProfile()
         guard let sizeBytes, sizeBytes > 0 else {
             return CompatibilityReport(
                 backendKind: .ggufLlama,
