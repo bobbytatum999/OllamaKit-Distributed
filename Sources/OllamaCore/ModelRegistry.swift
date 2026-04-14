@@ -598,11 +598,25 @@ public actor ModelRegistryStore {
             guard values.isRegularFile == true else { continue }
 
             let relativePath = fileURL.path.replacingOccurrences(of: rootURL.path + "/", with: "")
+            let sizeBytes = values.fileSize.map(Int64.init)
+
+            // FIX: Skip SHA-256 for files > 100MB to prevent OOM crash.
+            // CoreML packages routinely contain multi-gigabyte compiled model files
+            // (.mlmodelc, .mlpackage). sha256() reads the entire file in 1MB chunks,
+            // which for multi-GB files causes the iOS memory watchdog to kill the app.
+            // The same threshold is already applied to GGUF files in buildManifestForGGUF.
+            let sha: String
+            if let size = sizeBytes, size > 100_000_000 {
+                sha = "skipped-large-file-\(size)"
+            } else {
+                sha = try sha256(for: fileURL)
+            }
+
             files.append(
                 ModelPackageFile(
                     path: relativePath,
-                    sha256: try sha256(for: fileURL),
-                    sizeBytes: values.fileSize.map(Int64.init)
+                    sha256: sha,
+                    sizeBytes: sizeBytes
                 )
             )
         }

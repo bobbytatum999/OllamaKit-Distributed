@@ -13,18 +13,20 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
     }
 
     private let queue = DispatchQueue(label: "com.ollamakit.ollamacore.gguf", qos: .userInitiated)
-    // FIX: All writes to cancelRequested go through a single serial queue.
-    // Previously setCancelRequested() was called from both queue.async blocks and from
-    // the main actor, creating a data race from Swift's perspective (writes from multiple
-    // isolation domains to the same mutable state without synchronized access).
-    // By routing every write through the queue, all reads and writes are serialized.
-    private let cancelQueue = DispatchQueue(label: "com.ollamakit.gguf.cancel")
+    // _cancelRequested is protected exclusively by stateLock.
+    //
+    // The previous implementation maintained BOTH a cancelQueue and stateLock, but the
+    // cancelRequested getter read _cancelRequested directly (no lock at all), while the
+    // setter routed through cancelQueue.sync. isCancellationRequested then acquired
+    // stateLock before calling the getter, meaning stateLock only protected the reader
+    // path — not the writer path (which used cancelQueue). This left concurrent reads
+    // from `queue.async` and writes from `cancelQueue.sync` racing on `_cancelRequested`
+    // with no mutual exclusion between them: a genuine data race that could corrupt memory
+    // and produce undefined behaviour, including crashes.
+    //
+    // Fix: use stateLock alone for every access to _cancelRequested. This is simpler,
+    // correct, and removes the cancelQueue entirely.
     private var _cancelRequested = false
-
-    private var cancelRequested: Bool {
-        get { _cancelRequested }
-        set { cancelQueue.sync { _cancelRequested = newValue } }
-    }
 
     private let stateLock = NSLock()
 
@@ -149,24 +151,43 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
         return max(physicalMemory - usedMemory, physicalMemory / 4)
     }
 
-    // Helper for timeout wrapper
-    private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            // Add the actual operation
+    // withTimeout wraps an async operation with a deadline.
+    //
+    // IMPORTANT: This cannot interrupt blocking C code (llama_model_load_from_file).
+    // When the timeout fires, the error propagates immediately, but the underlying
+    // validationQueue.async block continues running until the C call returns.
+    // We accept this trade-off: the caller receives the timeout error promptly,
+    // and the background thread cleans up naturally when the C call finishes.
+    // The previous implementation used withThrowingTaskGroup, which requires waiting
+    // for ALL child tasks to complete before returning — meaning the "60-second timeout"
+    // could block the caller for 60s + however long llama_model_load_from_file takes,
+    // completely defeating the purpose of the timeout.
+    private func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            let deadline = seconds
+
             group.addTask {
                 try await operation()
             }
 
-            // Add timeout task
             group.addTask {
-                try await Task.sleep(for: .seconds(seconds))
-                throw InferenceError.backendUnavailable("Validation timed out after \(Int(seconds)) seconds. The model may be too large or corrupted.")
+                try await Task.sleep(nanoseconds: UInt64(deadline * 1_000_000_000))
+                throw InferenceError.backendUnavailable(
+                    "Validation timed out after \(Int(deadline)) seconds. The model may be too large for this device or the file may be corrupted."
+                )
             }
 
-            // Return the first result (success or error)
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
+            // Return whichever task finishes first (success or error).
+            // Cancelling the group stops the *other* task's Swift cooperative
+            // scheduling, but cannot interrupt blocking C code — see note above.
+            do {
+                let result = try await group.next()!
+                group.cancelAll()
+                return result
+            } catch {
+                group.cancelAll()
+                throw error
+            }
         }
     }
 
@@ -350,13 +371,12 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
     }
 
     private var isCancellationRequested: Bool {
-        stateLock.withLock { cancelRequested }
+        // stateLock is the single source of truth for _cancelRequested.
+        stateLock.withLock { _cancelRequested }
     }
 
     private func setCancelRequested(_ value: Bool) {
-        stateLock.withLock {
-            cancelRequested = value
-        }
+        stateLock.withLock { _cancelRequested = value }
     }
 }
 

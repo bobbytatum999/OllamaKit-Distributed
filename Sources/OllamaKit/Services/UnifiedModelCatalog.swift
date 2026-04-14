@@ -679,6 +679,11 @@ final class ModelStorage: ObservableObject {
         }
     }
 
+    // UserDefaults key used as a crash-guard journal for in-progress validations.
+    // Any catalogId written here and NOT cleaned up before the next launch means
+    // the app was killed (OOM watchdog or otherwise) while validating that model.
+    private static let validationInProgressKey = "ollamakit.validation.inprogress.v1"
+
     private func validatePendingGGUFModels() async {
         let pendingCatalogIDs = snapshots
             .filter {
@@ -688,31 +693,87 @@ final class ModelStorage: ObservableObject {
             }
             .map(\.catalogId)
 
-        // FIX: Validate models sequentially with error isolation
-        // This prevents one corrupted model from crashing the entire validation process
-        for catalogId in pendingCatalogIDs {
-            do {
-                // Add a small delay between validations to let memory pressure settle
-                if pendingCatalogIDs.first != catalogId {
-                    try? await Task.sleep(for: .milliseconds(500))
-                }
+        // CRASH-LOOP GUARD
+        // If a model's catalogId is already in validationInProgressKey on this launch,
+        // the previous app session was killed while validating it (most likely an OOM
+        // watchdog kill, which leaves the registry entry as .pending and causes an
+        // infinite crash loop on every subsequent launch). Mark those models .failed
+        // immediately so the user can see them and manually revalidate once they have
+        // enough free memory, rather than retrying automatically and crashing again.
+        let previouslyInProgress = Set(
+            (UserDefaults.standard.array(forKey: Self.validationInProgressKey) as? [String]) ?? []
+        )
 
-                _ = await validateModel(catalogId: catalogId)
-            } catch {
-                await MainActor.run {
-                    AppLogStore.shared.record(
-                        .modelsCatalog,
-                        level: .error,
-                        title: "Validation Error Isolated",
-                        message: "Failed to validate \(catalogId): \(error.localizedDescription)",
-                        metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
-                    )
-                }
+        if !previouslyInProgress.isEmpty {
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .warning,
+                    title: "Validation Crash Guard Triggered",
+                    message: "Previous session was terminated during validation of \(previouslyInProgress.count) model(s). Marking as failed to prevent a crash loop.",
+                    metadata: ["affected_ids": previouslyInProgress.sorted().joined(separator: ", ")]
+                )
             }
 
-            // Check for cancellation
-            if Task.isCancelled {
-                break
+            for catalogId in pendingCatalogIDs where previouslyInProgress.contains(catalogId) {
+                let failedOutcome = ModelValidationOutcome(
+                    status: .failed,
+                    message: "Validation was interrupted (the app was terminated, likely due to low memory). Tap Revalidate when other apps are closed and more memory is available."
+                )
+                do {
+                    _ = try await ModelRegistryStore.shared.updateValidation(
+                        catalogId: catalogId,
+                        outcome: failedOutcome
+                    )
+                } catch {
+                    await MainActor.run {
+                        AppLogStore.shared.record(
+                            .modelsCatalog,
+                            level: .error,
+                            title: "Failed to Write Crash-Guard Failure Status",
+                            message: "Could not mark \(catalogId) as failed: \(error.localizedDescription)",
+                            metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                        )
+                    }
+                }
+            }
+        }
+
+        // Clear any stale journal entries from last session before starting this session's work.
+        UserDefaults.standard.removeObject(forKey: Self.validationInProgressKey)
+
+        // Only auto-validate models that were NOT mid-validation when the app last crashed.
+        let safeToValidate = pendingCatalogIDs.filter { !previouslyInProgress.contains($0) }
+
+        guard !safeToValidate.isEmpty else {
+            await refresh()
+            return
+        }
+
+        // Write the full set we're about to validate into the journal BEFORE starting.
+        // If the app is killed partway through, these IDs will be present on the next
+        // launch and the crash-guard above will handle them.
+        UserDefaults.standard.set(safeToValidate, forKey: Self.validationInProgressKey)
+
+        for catalogId in safeToValidate {
+            if Task.isCancelled { break }
+
+            // Small delay between models so memory pressure from the previous
+            // validation can fully settle before the next one begins.
+            if safeToValidate.first != catalogId {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+
+            _ = await validateModel(catalogId: catalogId)
+
+            // Successfully finished this model — remove it from the journal so it
+            // is not incorrectly flagged as crashed on the next launch.
+            var remaining = (UserDefaults.standard.array(forKey: Self.validationInProgressKey) as? [String]) ?? []
+            remaining.removeAll { $0 == catalogId }
+            if remaining.isEmpty {
+                UserDefaults.standard.removeObject(forKey: Self.validationInProgressKey)
+            } else {
+                UserDefaults.standard.set(remaining, forKey: Self.validationInProgressKey)
             }
         }
     }

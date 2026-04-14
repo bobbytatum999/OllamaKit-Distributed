@@ -115,7 +115,58 @@ struct OllamaKitApp: App {
             let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             return try ModelContainer(for: schema, configurations: [inMemoryConfig])
         } catch {
-            fatalError("Failed to create any ModelContainer: \(error)")
+            AppLogStore.shared.record(
+                .app,
+                level: .error,
+                title: "SwiftData In-Memory Store Also Failed",
+                message: "Attempting recovery by resetting the persistent store: \(error.localizedDescription)",
+                metadata: ["error": error.localizedDescription]
+            )
+        }
+
+        // Last-resort recovery: delete the corrupted persistent store file and retry.
+        // This loses persisted chat history and downloaded model records (the actual
+        // GGUF files on disk are not deleted), but it prevents the app from being
+        // permanently unlaunchable — which is what the previous fatalError() caused.
+        do {
+            let storeURL = ModelRegistryPath.documentsDirectoryURL
+                .appendingPathComponent("default.store")
+            let walURL = storeURL.appendingPathExtension("wal")
+            let shmURL = storeURL.appendingPathExtension("shm")
+
+            for url in [storeURL, walURL, shmURL] {
+                try? FileManager.default.removeItem(at: url)
+            }
+
+            let recoveredConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            let container = try ModelContainer(for: schema, configurations: [recoveredConfig])
+            AppLogStore.shared.record(
+                .app,
+                level: .warning,
+                title: "SwiftData Store Recovered",
+                message: "The corrupted persistent store was reset. Chat history has been cleared, but model files are intact.",
+                metadata: [:]
+            )
+            return container
+        } catch {
+            // If we still cannot create any container, return an in-memory one
+            // rather than crashing. The app will lose data this session but will
+            // remain launchable so the user can investigate or reinstall.
+            AppLogStore.shared.record(
+                .app,
+                level: .error,
+                title: "SwiftData Recovery Failed — Using Emergency In-Memory Store",
+                message: "All store creation attempts failed. The app will run without persistence this session: \(error.localizedDescription)",
+                metadata: ["error": error.localizedDescription]
+            )
+
+            // Force-unwrap is intentional: an in-memory container with a valid schema
+            // should never fail. If this throws, it indicates a schema-level bug that
+            // must be fixed in development, not papered over at runtime.
+            return try! ModelContainer(
+                for: schema,
+                configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+            )
         }
     }
 }
