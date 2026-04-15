@@ -109,6 +109,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
+			shellScript = "# Skip runtime verification when building for simulator or when disabled\\nif [[ \"$OLLAMAKIT_DISABLE_EMBEDDED_RUNTIMES\" == \"1\" ]]; then\\n    echo \"Skipping embedded runtime verification (disabled)\"\\n    exit 0\\nfi\\n\\n# Skip for simulator builds\\nif [[ \"$PLATFORM_NAME\" == *\"simulator\"* ]]; then\\n    echo \"Skipping embedded runtime verification (simulator build)\"\\n    exit 0\\nfi\\n\\n\"$SRCROOT/Scripts/ensure-embedded-runtimes.sh\" \"$SRCROOT/Vendor/Runtime\" || exit 1\\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
