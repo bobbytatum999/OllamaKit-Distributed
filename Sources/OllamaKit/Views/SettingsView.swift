@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import OllamaCore
 
 private let huggingFaceTokensURL = URL(string: "https://huggingface.co/settings/tokens")
 private let githubHomepageURL = URL(string: "https://github.com")
@@ -40,15 +41,29 @@ struct SettingsView: View {
                         HuggingFaceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(
-                        title: "Power Agent",
-                        footer: "Agent automation controls for local files, workspaces, runtimes, GitHub, and the hidden browser automation surface. Writes and external side effects still pause for approval."
-                    ) {
-                        PowerAgentSettingsSection(settings: settings)
-                    }
-
                     SurfaceSectionCard(title: "Interface") {
                         InterfaceSettingsSection(settings: settings)
+                    }
+
+                    SurfaceSectionCard(
+                        title: "App Debug Logs",
+                        footer: "Client-side app events only (tab switches, chat send/receive, runtime errors). Server/API logs remain in the Server tab."
+                    ) {
+                        AppDebugLogsSection()
+                    }
+
+                    SurfaceSectionCard(
+                        title: "Model Performance",
+                        footer: "Recent model load/generation timing samples to help debug slow responses."
+                    ) {
+                        ModelPerformanceSection()
+                    }
+
+                    SurfaceSectionCard(
+                        title: "Benchmark",
+                        footer: "Run a quick benchmark using the smallest runnable model on this device."
+                    ) {
+                        BenchmarkSection()
                     }
 
                     SurfaceSectionCard(title: "Data Management") {
@@ -218,6 +233,103 @@ struct PerformanceSettingsSection: View {
                 }
             }
             .padding(.vertical, 12)
+            
+            Divider()
+
+            TurboQuantModePickerRow(selection: $settings.turboQuantMode)
+
+            Divider()
+
+            KVCachePickerRow(
+                title: "KV Cache Type (K)",
+                description: "Key-cache precision for experimental TurboQuant-style tuning",
+                selection: $settings.kvCacheTypeK
+            )
+            .disabled(settings.turboQuantMode != .disabled)
+
+            Divider()
+
+            KVCachePickerRow(
+                title: "KV Cache Type (V)",
+                description: "Value-cache precision for experimental TurboQuant-style tuning",
+                selection: $settings.kvCacheTypeV
+            )
+            .disabled(settings.turboQuantMode != .disabled)
+
+        }
+    }
+}
+
+private struct TurboQuantModePickerRow: View {
+    @Binding var selection: RuntimePreferences.TurboQuantMode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("TurboQuant Mode")
+                .font(.system(size: 16, weight: .medium))
+            Text("Google TurboQuant-inspired KV presets. Balanced/Aggressive override manual K/V selectors.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            Picker("TurboQuant Mode", selection: $selection) {
+                ForEach(RuntimePreferences.TurboQuantMode.allCases, id: \.self) { mode in
+                    Text(label(for: mode)).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func label(for mode: RuntimePreferences.TurboQuantMode) -> String {
+        switch mode {
+        case .disabled:
+            return "Disabled (Manual)"
+        case .googleTurboQuantBalanced:
+            return "Google TurboQuant Balanced"
+        case .googleTurboQuantAggressive:
+            return "Google TurboQuant Aggressive"
+        }
+    }
+}
+
+private struct KVCachePickerRow: View {
+    let title: String
+    let description: String
+    @Binding var selection: RuntimePreferences.KVCacheQuantization
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 16, weight: .medium))
+            Text(description)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            Picker(title, selection: $selection) {
+                ForEach(RuntimePreferences.KVCacheQuantization.allCases, id: \.self) { option in
+                    Text(label(for: option)).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func label(for option: RuntimePreferences.KVCacheQuantization) -> String {
+        switch option {
+        case .float16:
+            return "F16"
+        case .float32:
+            return "F32"
+        case .q8_0:
+            return "Q8_0"
+        case .q6_K:
+            return "Q6_K"
+        case .q5_0:
+            return "Q5_0"
+        case .q4_0:
+            return "Q4_0"
         }
     }
 }
@@ -428,331 +540,6 @@ struct HuggingFaceTokenEditView: View {
     }
 }
 
-struct PowerAgentSettingsSection: View {
-    @ObservedObject var settings: AppSettings
-    @StateObject private var workspaceManager = AgentWorkspaceManager.shared
-    @ObservedObject private var serverLogs = ServerLogStore.shared
-    @ObservedObject private var agentLogs = AgentLogStore.shared
-    @State private var showingGitHubToken = false
-    @State private var settingsMode: PowerAgentSettingsMode = .basic
-
-    private var activeWorkspaceName: String {
-        workspaceManager.workspace(id: settings.agentDefaultWorkspaceID)?.name
-            ?? settings.agentDefaultWorkspaceID.nonEmpty
-            ?? "OllamaKit Mirror"
-    }
-
-    private var runtimePackages: [RuntimePackageRecord] {
-        AgentToolRuntime.shared.runtimePackagePreview().filter { $0.id != "git" }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Picker("Power Agent Mode", selection: $settingsMode) {
-                ForEach(PowerAgentSettingsMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.vertical, 12)
-
-            Divider()
-
-            if settingsMode == .basic {
-                basicSettings
-            } else {
-                advancedSettings
-            }
-        }
-        .task {
-            workspaceManager.bootstrapIfNeeded()
-        }
-    }
-
-    private var basicSettings: some View {
-        VStack(spacing: 0) {
-            Toggle(isOn: $settings.powerAgentEnabled) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Enable Power Agent")
-                        .font(.system(size: 16, weight: .medium))
-                    Text("Turns on agent tools, checkpoints, workspaces, runtime access, and hidden browser automation.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("How It Works")
-                    .font(.system(size: 16, weight: .medium))
-                Text("Power Agent can work inside granted folders, internal workspaces, GitHub, and embedded runtimes. The browser is agent-only and does not appear as a personal browser anymore.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                Text("Model-specific browser and coding permissions still live in the Models tab.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-
-            LocalFilesSettingsView()
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Active Workspace")
-                    .font(.system(size: 16, weight: .medium))
-                Text(activeWorkspaceName)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Text("Reads run automatically. Writes, deletes, restores, GitHub pushes, and relay reconnects still pause for approval.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Runtime Health")
-                    .font(.system(size: 16, weight: .medium))
-                ForEach(runtimePackages) { package in
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(package.title)
-                                .font(.system(size: 14, weight: .semibold))
-                            HStack(spacing: 8) {
-                                Text(package.statusTitle)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(package.available ? .green : .orange)
-                                if let version = package.version?.nonEmpty {
-                                    Text(version)
-                                        .font(.system(size: 12, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            if let reason = package.availabilityReason?.nonEmpty {
-                                Text(reason)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
-                            }
-                            if !package.supportedOperations.isEmpty {
-                                Text(package.supportedOperations.joined(separator: " • "))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                        Spacer()
-                    }
-                }
-                Text("Installed means the runtime wrapper, manifest, support resources, and bridge all loaded from the IPA. Model policy can still disable a runtime per model.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Stored Logs")
-                    .font(.system(size: 16, weight: .medium))
-                Text("Agent: \(agentLogs.entries.count) entries • keeps \(agentLogs.retentionLimit)")
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Text("Server: \(serverLogs.entries.count) entries • keeps \(serverLogs.retentionLimit)")
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Text("Logs are stored on device and survive app relaunches and server restarts until you explicitly clear them.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 12)
-        }
-    }
-
-    private var advancedSettings: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("GitHub Repository")
-                    .font(.system(size: 16, weight: .medium))
-                TextField("owner/repo", text: $settings.agentGitHubRepository)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.system(size: 14, design: .monospaced))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(.ultraThinMaterial)
-                    )
-                Text("Used for GitHub metadata, workflow reads, remote refreshes, and workspace pushes.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("GitHub OAuth Client ID")
-                    .font(.system(size: 16, weight: .medium))
-                TextField("Iv1.1234567890abcdef", text: $settings.agentGitHubClientID)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.system(size: 14, design: .monospaced))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(.ultraThinMaterial)
-                    )
-                Text("Used for GitHub device-flow login. Leave empty if you only use a personal access token.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                if settings.hasPendingGitHubDeviceFlow {
-                    Text("Pending device flow: code \(settings.agentGitHubUserCode) at \(settings.agentGitHubVerificationURL)")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("GitHub Token")
-                        .font(.system(size: 16, weight: .medium))
-                    Spacer()
-                    Button {
-                        showingGitHubToken.toggle()
-                    } label: {
-                        Image(systemName: showingGitHubToken ? "eye.slash" : "eye")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                TextField(
-                    "github_pat_...",
-                    text: Binding(
-                        get: {
-                            showingGitHubToken
-                                ? settings.agentGitHubToken
-                                : String(repeating: "•", count: min(settings.agentGitHubToken.count, 24))
-                        },
-                        set: { newValue in
-                            if showingGitHubToken || newValue.contains("github_") || newValue.contains("ghp_") {
-                                settings.agentGitHubToken = newValue
-                            }
-                        }
-                    )
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.system(size: 14, design: .monospaced))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(.ultraThinMaterial)
-                )
-
-                Text("Optional for public metadata reads. Required for GitHub pushes and private repositories.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Agent Browser Start URL")
-                    .font(.system(size: 16, weight: .medium))
-                TextField("https://github.com", text: $settings.agentBrowserHomeURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.system(size: 14, design: .monospaced))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(.ultraThinMaterial)
-                    )
-                Text("Used only by the hidden browser automation runtime when an agent starts a browsing task.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Managed Relay")
-                    .font(.system(size: 16, weight: .medium))
-                Text(settings.normalizedManagedRelayBaseURL ?? "Configured in Server settings")
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Text("Managed public URL settings live in the Server tab. Power Agent tools read the same relay session and permissions.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 12)
-
-            Divider()
-
-            Toggle(isOn: $settings.agentBundleExpertMode) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Expert Bundle Mode")
-                        .font(.system(size: 16, weight: .medium))
-                    Text(settings.isJailbreakBuild
-                         ? "Requires a writable live-bundle workspace. Allows broader resource edits, but still does not enable binary Mach-O rewriting."
-                         : "Standard sideload IPAs keep bundle resources read-only. This toggle only matters when a writable live bundle workspace exists.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .disabled(!settings.isJailbreakBuild)
-            .padding(.vertical, 12)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Build Diagnostics")
-                    .font(.system(size: 16, weight: .medium))
-                Text(settings.buildVariant.title)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Text("Browser surface: agent-only hidden")
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Text("Log storage: \(agentLogs.storageLocationDescription) and \(serverLogs.storageLocationDescription)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.vertical, 12)
-        }
-    }
-}
-
-private enum PowerAgentSettingsMode: String, CaseIterable, Identifiable {
-    case basic
-    case advanced
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .basic:
-            return "Basic"
-        case .advanced:
-            return "Advanced"
-        }
-    }
-}
-
 struct InterfaceSettingsSection: View {
     @ObservedObject var settings: AppSettings
     
@@ -904,6 +691,233 @@ struct DataManagementSection: View {
             }
         } message: {
             Text("This will permanently delete all downloaded and imported models. You'll need to add them again to use them.")
+        }
+    }
+}
+
+struct AppDebugLogsSection: View {
+    @ObservedObject private var logStore = AppLogStore.shared
+
+    private var recentEntries: [AppLogEntry] {
+        Array(logStore.entries.suffix(60).reversed())
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recent Events")
+                        .font(.system(size: 16, weight: .medium))
+                    Text(logStore.persistenceSummary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Clear") {
+                    logStore.clear()
+                    HapticManager.impact(.light)
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .buttonStyle(.bordered)
+            }
+            .padding(.vertical, 12)
+
+            if recentEntries.isEmpty {
+                Divider()
+                Text("No app debug logs yet.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Divider()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(recentEntries) { entry in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("[\(entry.category.rawValue)] \(entry.title)")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text(entry.message)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                Text(entry.timestamp.formatted(date: .omitted, time: .standard))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
+            }
+        }
+    }
+}
+
+struct ModelPerformanceSection: View {
+    @ObservedObject private var performanceStore = ModelPerformanceStore.shared
+
+    private var entries: [ModelPerformanceSample] {
+        Array(performanceStore.entries.suffix(40).reversed())
+    }
+
+    private var averageTokensPerSecond: Double {
+        let samples = entries.filter { $0.phase == .generate && $0.tokensPerSecond > 0 && $0.wasSuccessful }
+        guard !samples.isEmpty else { return 0 }
+        return samples.reduce(0) { $0 + $1.tokensPerSecond } / Double(samples.count)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recent Speed Samples")
+                        .font(.system(size: 16, weight: .medium))
+                    Text(averageTokensPerSecond > 0 ? String(format: "Avg generate speed: %.1f tok/s", averageTokensPerSecond) : "No completed generation samples yet.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Clear") {
+                    performanceStore.clear()
+                    HapticManager.impact(.light)
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .buttonStyle(.bordered)
+            }
+            .padding(.vertical, 12)
+
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(entries) { entry in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("[\(entry.phase.rawValue)] \(entry.modelID)")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(
+                                entry.phase == .generate
+                                ? String(format: "%.1f ms • %d tokens • %.1f tok/s%@", entry.elapsedMs, entry.tokens, entry.tokensPerSecond, entry.wasSuccessful ? "" : " • failed")
+                                : String(format: "%.1f ms%@", entry.elapsedMs, entry.wasSuccessful ? "" : " • failed")
+                            )
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            if let notes = entry.notes, !notes.isEmpty {
+                                Text(notes)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 220)
+        }
+    }
+}
+
+struct BenchmarkSection: View {
+    @State private var runToken = 0
+    @State private var isRunning = false
+    @State private var status = "Idle"
+    @State private var resultLine = ""
+    @State private var errorLine = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Quick Benchmark")
+                    .font(.system(size: 16, weight: .medium))
+                Spacer()
+                Button(isRunning ? "Running…" : "Run") {
+                    guard !isRunning else { return }
+                    runToken += 1
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isRunning)
+            }
+
+            Text(status)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            if !resultLine.isEmpty {
+                Text(resultLine)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            if !errorLine.isEmpty {
+                Text(errorLine)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(.vertical, 12)
+        .task(id: runToken) {
+            guard runToken > 0 else { return }
+            await runBenchmark()
+        }
+    }
+
+    @MainActor
+    private func runBenchmark() async {
+        isRunning = true
+        status = "Refreshing models…"
+        resultLine = ""
+        errorLine = ""
+        defer { isRunning = false }
+
+        await ModelStorage.shared.refresh()
+        let candidates = ModelStorage.shared.selectionSnapshots
+            .filter { $0.canBeSelectedForChat && $0.isValidatedRunnable }
+            .sorted { $0.size < $1.size }
+
+        guard let model = candidates.first else {
+            status = "No runnable model available."
+            return
+        }
+
+        do {
+            status = "Loading \(model.displayName)…"
+            let contextLength = max(min(model.runtimeContextLength, AppSettings.shared.defaultContextLength), 512)
+            let loadStart = CFAbsoluteTimeGetCurrent()
+            try await ModelRunner.shared.loadModel(
+                catalogId: model.catalogId,
+                contextLength: contextLength,
+                gpuLayers: AppSettings.shared.gpuLayers
+            )
+            let loadMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+
+            status = "Generating sample output…"
+            let result = try await ModelRunner.shared.generate(
+                prompt: "Return a short benchmark response.",
+                parameters: SamplingParameters(
+                    temperature: 0.2,
+                    topP: 0.9,
+                    topK: 40,
+                    repeatPenalty: 1.05,
+                    repeatLastN: 64,
+                    maxTokens: 96
+                )
+            ) { _ in }
+
+            let tokPerSec = result.generationTime > 0
+                ? Double(result.tokensGenerated) / result.generationTime
+                : 0
+            status = "Benchmark complete."
+            resultLine = String(
+                format: "%@ • load %.0f ms • %d tokens • %.1f tok/s",
+                model.displayName,
+                loadMs,
+                result.tokensGenerated,
+                tokPerSec
+            )
+        } catch {
+            status = "Benchmark failed."
+            errorLine = error.localizedDescription
         }
     }
 }
