@@ -500,6 +500,14 @@ struct DownloadedModelRow: View {
     }
 
     private func revalidateModel() {
+        if model.importSource == .localImport || model.importSource == .coreMLImport {
+            viewModel.alertTitle = "Validation Temporarily Disabled"
+            viewModel.errorMessage = "Imported models can currently crash during recalibration on some builds. Remove and re-import the model instead."
+            viewModel.showError = true
+            HapticManager.notification(.warning)
+            return
+        }
+
         Task {
             let validatedSnapshot = await ModelRunner.shared.validateModel(catalogId: model.catalogId)
             viewModel.alertTitle = "Validation"
@@ -598,7 +606,6 @@ struct BuiltInAppleModelCard: View {
         title: "Checking",
         message: "Checking Apple Intelligence availability on this device."
     )
-    @State private var showingAgentCapabilities = false
 
     private var model: ModelSnapshot {
         modelStore.selectionSnapshots.first(where: \.isBuiltInAppleModel)
@@ -1100,7 +1107,7 @@ struct ModelDetailSheet: View {
                             ForEach(viewModel.availableFiles) { file in
                                 GGUFFileRow(
                                     file: file,
-                                    compatibility: viewModel.deviceProfile.compatibility(for: file.size),
+                                    compatibility: viewModel.deviceProfile.compatibility(for: file),
                                     viewModel: viewModel
                                 ) {
                                     viewModel.requestDownload(file, modelId: model.modelId)
@@ -1383,12 +1390,14 @@ class ModelsViewModel: ObservableObject {
                     errorMessage = "\(importedModel.displayName) was imported, but it is missing runnable ANEMLL/CoreML metadata. Import the full model folder, not only a compiled bundle."
                 }
             } else if importedModel.backendKind == .ggufLlama {
-                if importedModel.isValidatedRunnable {
-                    errorMessage = "\(importedModel.displayName) is ready to use."
-                } else {
+                if importedModel.effectiveValidationStatus == .failed {
                     alertTitle = "Validation Failed"
                     errorMessage = importedModel.validationSummary
                         ?? "\(importedModel.displayName) imported successfully, but it failed validation on this device."
+                } else if importedModel.isValidatedRunnable {
+                    errorMessage = "\(importedModel.displayName) is ready to use."
+                } else {
+                    errorMessage = "\(importedModel.displayName) imported successfully. Validation will run when you load the model."
                 }
             } else {
                 errorMessage = "\(importedModel.displayName) is ready to use."
@@ -1569,7 +1578,7 @@ class ModelSearchViewModel: ObservableObject {
             await ModelStorage.shared.upsertDownloadedModel(seed)
             if let snapshot = ModelStorage.shared.snapshot(name: seed.name),
                snapshot.backendKind == .ggufLlama,
-               !snapshot.isValidatedRunnable
+               snapshot.effectiveValidationStatus == .failed
             {
                 downloadErrorTitle = "Validation Failed"
                 downloadError = snapshot.validationSummary
@@ -1592,7 +1601,7 @@ class ModelSearchViewModel: ObservableObject {
     }
 
     func requestDownload(_ file: GGUFInfo, modelId: String) {
-        let compatibility = deviceProfile.compatibility(for: file.size)
+        let compatibility = deviceProfile.compatibility(for: file)
 
         switch compatibility {
         case .recommended, .unknown:
@@ -1822,12 +1831,15 @@ struct ModelDownloadWarning: Identifiable {
         let recommendedBudget = profile.formattedRecommendedBudget
         let supportedBudget = profile.formattedSupportedBudget
         let fileSize = file.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "unknown size"
+        let estimatedWorkingSet = profile.estimatedWorkingSetBytes(for: file)
+            .map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .memory) }
+            ?? "unknown"
 
         switch compatibility {
         case .supported:
-            return "\(filename) (\(fileSize)) is larger than the recommended budget for \(profile.deviceLabel). It may still run, but it can be slower and unload more often.\n\nRecommended: up to \(recommendedBudget)\nMay run: up to \(supportedBudget)"
+            return "\(filename) (\(fileSize)) may still run on \(profile.deviceLabel), but the estimated runtime working set is \(estimatedWorkingSet), so expect slower generation or frequent unload/reload cycles.\n\nRecommended file budget: up to \(recommendedBudget)\nMay run file budget: up to \(supportedBudget)"
         case .tooLarge:
-            return "\(filename) (\(fileSize)) is above the likely working size for \(profile.deviceLabel). You can still download it, but it may fail to load or run poorly.\n\nRecommended: up to \(recommendedBudget)\nMay run: up to \(supportedBudget)"
+            return "\(filename) (\(fileSize)) is likely to fail on \(profile.deviceLabel). Estimated runtime working set: \(estimatedWorkingSet).\n\nRecommended file budget: up to \(recommendedBudget)\nMay run file budget: up to \(supportedBudget)"
         case .recommended, .unknown:
             return "Download \(filename)?"
         }
@@ -1989,8 +2001,21 @@ struct DeviceCapabilityProfile {
         }
     }
 
-    func compatibility(for fileSize: Int64?) -> ModelFileCompatibility {
-        guard let fileSize else { return .unknown }
+    func compatibility(for file: GGUFInfo) -> ModelFileCompatibility {
+        guard let fileSize = file.size else { return .unknown }
+
+        if let estimatedWorkingSet = estimatedWorkingSetBytes(for: file) {
+            let recommendedWorkingSetBudget = Int64(Double(physicalMemoryBytes) * 0.55)
+            let supportedWorkingSetBudget = Int64(Double(physicalMemoryBytes) * 0.72)
+
+            if estimatedWorkingSet <= recommendedWorkingSetBudget {
+                return .recommended
+            }
+
+            if estimatedWorkingSet <= supportedWorkingSetBudget {
+                return .supported
+            }
+        }
 
         if fileSize <= recommendedModelBudgetBytes {
             return .recommended
@@ -2001,6 +2026,77 @@ struct DeviceCapabilityProfile {
         }
 
         return .tooLarge
+    }
+
+    func estimatedWorkingSetBytes(for file: GGUFInfo) -> Int64? {
+        guard let fileSize = file.size else { return nil }
+
+        let quantizationToken = file.quantization?.uppercased() ?? file.filename.uppercased()
+        let bytesPerWeight = approximateBytesPerWeight(for: quantizationToken)
+        let parameterCountB = inferredParameterCountB(from: file.filename)
+
+        let inferredWeightsBytes: Double
+        if let parameterCountB {
+            inferredWeightsBytes = parameterCountB * 1_000_000_000 * bytesPerWeight
+        } else {
+            inferredWeightsBytes = Double(fileSize)
+        }
+
+        let loadedWeightsBytes = max(Double(fileSize) * 1.15, inferredWeightsBytes * 1.08)
+        let runtimeOverheadBytes = min(max(loadedWeightsBytes * 0.18, 350_000_000), 1_800_000_000)
+        let kvCacheBytes: Double
+        if let parameterCountB {
+            kvCacheBytes = min(max(parameterCountB * 1_000_000_000 * 0.015, 120_000_000), 1_200_000_000)
+        } else {
+            kvCacheBytes = 350_000_000
+        }
+
+        return Int64(loadedWeightsBytes + runtimeOverheadBytes + kvCacheBytes)
+    }
+
+    private func inferredParameterCountB(from filename: String) -> Double? {
+        let lower = filename.lowercased()
+        let patterns = ["([0-9]+(?:\\.[0-9]+)?)b", "([0-9]+(?:\\.[0-9]+)?)m"]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+            guard let match = regex.firstMatch(in: lower, range: range),
+                  let valueRange = Range(match.range(at: 1), in: lower),
+                  let rawValue = Double(lower[valueRange]) else {
+                continue
+            }
+
+            if pattern.contains("m") {
+                return rawValue / 1_000.0
+            }
+            return rawValue
+        }
+
+        return nil
+    }
+
+    private func approximateBytesPerWeight(for quantization: String) -> Double {
+        switch quantization {
+        case let token where token.contains("Q2"):
+            return 0.35
+        case let token where token.contains("Q3"):
+            return 0.45
+        case let token where token.contains("Q4"):
+            return 0.60
+        case let token where token.contains("Q5"):
+            return 0.75
+        case let token where token.contains("Q6"):
+            return 0.90
+        case let token where token.contains("Q8"):
+            return 1.05
+        case let token where token.contains("F16") || token.contains("FP16"):
+            return 2.0
+        case let token where token.contains("F32") || token.contains("FP32"):
+            return 4.0
+        default:
+            return 1.0
+        }
     }
 }
 

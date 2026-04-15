@@ -67,7 +67,10 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             kvCachePreset: .platformDefault,
             flashAttentionEnabled: false, // Disable flash attention for validation
             mmapEnabled: true, // Use mmap to reduce memory pressure
-            mlockEnabled: false // Disable mlock during validation
+            mlockEnabled: false, // Disable mlock during validation
+            turboQuantMode: runtime.turboQuantMode,
+            kvCacheTypeK: runtime.kvCacheTypeK,
+            kvCacheTypeV: runtime.kvCacheTypeV
         )
 
         // FIX: Add timeout and better error handling to prevent crashes
@@ -212,7 +215,10 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             kvCachePreset: runtime.kvCachePreset,
             flashAttentionEnabled: runtime.flashAttentionEnabled,
             mmapEnabled: runtime.mmapEnabled,
-            mlockEnabled: runtime.mlockEnabled
+            mlockEnabled: runtime.mlockEnabled,
+            turboQuantMode: runtime.turboQuantMode,
+            kvCacheTypeK: runtime.kvCacheTypeK,
+            kvCacheTypeV: runtime.kvCacheTypeV
         )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -391,6 +397,9 @@ private struct BackendConfiguration: Equatable {
     let flashAttentionEnabled: Bool
     let mmapEnabled: Bool
     let mlockEnabled: Bool
+    let turboQuantMode: RuntimePreferences.TurboQuantMode
+    let kvCacheTypeK: RuntimePreferences.KVCacheQuantization
+    let kvCacheTypeV: RuntimePreferences.KVCacheQuantization
 }
 
 #if canImport(llama)

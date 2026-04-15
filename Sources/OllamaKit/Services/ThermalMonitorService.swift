@@ -1,3 +1,6 @@
+import Combine
+import Foundation
+
 import Foundation
 import Combine
 import OllamaCore
@@ -10,6 +13,22 @@ import OllamaCore
 final class ThermalMonitorService: ObservableObject {
     static let shared = ThermalMonitorService()
 
+    @Published private(set) var thermalState: ProcessInfo.ThermalState
+
+    private init(processInfo: ProcessInfo = .processInfo, notificationCenter: NotificationCenter = .default) {
+        thermalState = processInfo.thermalState
+
+        notificationCenter.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification,
+            object: processInfo,
+            queue: .main
+        ) { [weak self] _ in
+            self?.thermalState = processInfo.thermalState
+        }
+    }
+
+    var isElevated: Bool {
+        thermalState == .serious || thermalState == .critical
     /// Estimated temperature range for each thermal state, in Celsius.
     /// Based on documented iOS thermal management behavior.
     private static let estimatedCelsiusRanges: [ProcessInfo.ThermalState: ClosedRange<Double>] = [

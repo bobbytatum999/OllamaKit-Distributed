@@ -35,6 +35,17 @@ final class ModelRunner: ObservableObject {
     }
 
     func loadModel(catalogId: String, contextLength: Int = 4096, gpuLayers: Int? = nil) async throws {
+        let loadStart = CFAbsoluteTimeGetCurrent()
+        if let snapshot = await ModelStorage.shared.snapshot(name: catalogId),
+           snapshot.backendKind == .ggufLlama,
+           !snapshot.isValidatedRunnable
+        {
+            let refreshedSnapshot = await ModelStorage.shared.validateModel(catalogId: snapshot.catalogId) ?? snapshot
+            guard refreshedSnapshot.isValidatedRunnable else {
+                throw ModelError.backendUnavailable(
+                    refreshedSnapshot.validationSummary
+                        ?? "This GGUF model failed validation on this device and cannot be loaded for chat."
+                )
         let resolvedGpuLayers = await MainActor.run { gpuLayers ?? AppSettings.shared.gpuLayers }
         let resolvedKvCachePreset = await MainActor.run { AppSettings.shared.kvCachePreset.rawValue }
         await MainActor.run {
@@ -77,6 +88,51 @@ final class ModelRunner: ObservableObject {
 
         let runtime = RuntimePreferences(
             contextLength: max(contextLength, 512),
+            gpuLayers: gpuLayers ?? settings.gpuLayers,
+            threads: settings.threads,
+            batchSize: settings.batchSize,
+            flashAttentionEnabled: settings.flashAttentionEnabled,
+            mmapEnabled: settings.mmapEnabled,
+            mlockEnabled: settings.mlockEnabled,
+            turboQuantMode: settings.turboQuantMode,
+            kvCacheTypeK: settings.kvCacheTypeK,
+            kvCacheTypeV: settings.kvCacheTypeV,
+            keepModelInMemory: settings.keepModelInMemory,
+            autoOffloadMinutes: settings.autoOffloadMinutes
+        )
+
+        do {
+            let entry = try await RuntimeCoordinator.shared.loadModel(
+                catalogId: catalogId,
+                runtime: runtime
+            )
+            await updateActiveState(from: entry)
+
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+            await MainActor.run {
+                ModelPerformanceStore.shared.record(
+                    ModelPerformanceSample(
+                        modelID: catalogId,
+                        phase: .load,
+                        elapsedMs: elapsedMs,
+                        wasSuccessful: true
+                    )
+                )
+            }
+        } catch {
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+            await MainActor.run {
+                ModelPerformanceStore.shared.record(
+                    ModelPerformanceSample(
+                        modelID: catalogId,
+                        phase: .load,
+                        elapsedMs: elapsedMs,
+                        wasSuccessful: false,
+                        notes: error.localizedDescription
+                    )
+                )
+            }
+            throw error
             gpuLayers: settings_gpuLayers,
             threads: settings_threads,
             batchSize: settings_batchSize,
@@ -145,6 +201,7 @@ final class ModelRunner: ObservableObject {
             }
             throw ModelError.noModelLoaded
         }
+        let generationStart = CFAbsoluteTimeGetCurrent()
 
         let resolvedParameters = await MainActor.run { parameters ?? .appDefault }
 
@@ -156,6 +213,46 @@ final class ModelRunner: ObservableObject {
             )
             return (snap?.runtimeContextLength, rt)
         }
+        let preferredContextLength = max(AppSettings.shared.defaultContextLength, 512)
+        let effectiveContextLength = max(
+            min(currentSnapshot?.runtimeContextLength ?? preferredContextLength, preferredContextLength),
+            512
+        )
+        let runtime = RuntimePreferences.fromSettings(
+            AppSettings.shared,
+            contextLength: effectiveContextLength
+        )
+
+        let result: InferenceResult
+        do {
+            result = try await RuntimeCoordinator.shared.generate(
+                request: InferenceRequest(
+                    catalogId: activeCatalogId,
+                    prompt: prompt,
+                    systemPrompt: systemPrompt,
+                    conversationTurns: conversationTurns,
+                    tools: tools,
+                    reasoning: reasoning,
+                    parameters: parameters,
+                    runtimePreferences: runtime
+                )
+            ) { chunk in
+                onToken(chunk.text)
+            }
+        } catch {
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
+            await MainActor.run {
+                ModelPerformanceStore.shared.record(
+                    ModelPerformanceSample(
+                        modelID: activeCatalogId,
+                        phase: .generate,
+                        elapsedMs: elapsedMs,
+                        wasSuccessful: false,
+                        notes: error.localizedDescription
+                    )
+                )
+            }
+            throw error
 
         let result = try await RuntimeCoordinator.shared.generate(
             request: InferenceRequest(
@@ -174,6 +271,18 @@ final class ModelRunner: ObservableObject {
 
         let updatedEntry = try? await RuntimeCoordinator.shared.activeEntry(contextLength: runtime.contextLength)
         await updateActiveState(from: updatedEntry)
+
+        await MainActor.run {
+            ModelPerformanceStore.shared.record(
+                ModelPerformanceSample(
+                    modelID: activeCatalogId,
+                    phase: .generate,
+                    elapsedMs: result.generationTime * 1000,
+                    tokens: result.tokensGenerated,
+                    tokensPerSecond: result.generationTime > 0 ? Double(result.tokensGenerated) / result.generationTime : 0,
+                    wasSuccessful: !result.wasCancelled,
+                    notes: result.wasCancelled ? "cancelled" : nil
+                )
         await MainActor.run {
             AppLogStore.shared.record(
                 .model,

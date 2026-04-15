@@ -151,7 +151,7 @@ struct ModelSnapshot: Identifiable, Hashable, Sendable {
     var canBeSelectedForChat: Bool {
         switch backendKind {
         case .ggufLlama:
-            return fileExists && isValidatedRunnable
+            return fileExists && effectiveValidationStatus != .failed
         case .appleFoundation:
             return true
         case .coreMLPackage:
@@ -282,6 +282,9 @@ extension RuntimePreferences {
             flashAttentionEnabled: settings.flashAttentionEnabled,
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,
+            turboQuantMode: settings.turboQuantMode,
+            kvCacheTypeK: settings.kvCacheTypeK,
+            kvCacheTypeV: settings.kvCacheTypeV,
             keepModelInMemory: settings.keepModelInMemory,
             autoOffloadMinutes: settings.autoOffloadMinutes
         )
@@ -330,7 +333,6 @@ final class ModelStorage: ObservableObject {
     func bootstrap() async {
         await migrateLegacyModelsIfNeeded()
         await refresh()
-        await validatePendingGGUFModels()
     }
 
     func refresh() async {

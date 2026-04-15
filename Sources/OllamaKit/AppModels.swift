@@ -121,6 +121,55 @@ struct ServerLogEntry: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
+enum AppLogLevel: String, CaseIterable, Identifiable, Codable, Sendable {
+    case debug
+    case info
+    case warning
+    case error
+
+    var id: String { rawValue }
+}
+
+enum AppLogCategory: String, CaseIterable, Identifiable, Codable, Sendable {
+    case navigation
+    case interaction
+    case chat
+    case model
+    case settings
+    case runtime
+    case error
+
+    var id: String { rawValue }
+}
+
+struct AppLogEntry: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    let timestamp: Date
+    let level: AppLogLevel
+    let category: AppLogCategory
+    let title: String
+    let message: String
+    let metadata: [String: String]
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = .now,
+        level: AppLogLevel,
+        category: AppLogCategory,
+        title: String,
+        message: String,
+        metadata: [String: String] = [:]
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.level = level
+        self.category = category
+        self.title = title
+        self.message = message
+        self.metadata = metadata
+    }
+}
+
 enum AppPersistencePaths {
     static var applicationSupportURL: URL {
         let fileManager = FileManager.default
@@ -1078,6 +1127,15 @@ enum ModelPathHelper {
     @Published var flashAttentionEnabled: Bool { didSet { save(flashAttentionEnabled, for: Keys.flashAttentionEnabled) } }
     @Published var mmapEnabled: Bool { didSet { save(mmapEnabled, for: Keys.mmapEnabled) } }
     @Published var mlockEnabled: Bool { didSet { save(mlockEnabled, for: Keys.mlockEnabled) } }
+    @Published var turboQuantMode: RuntimePreferences.TurboQuantMode {
+        didSet { save(turboQuantMode.rawValue, for: Keys.turboQuantMode) }
+    }
+    @Published var kvCacheTypeK: RuntimePreferences.KVCacheQuantization {
+        didSet { save(kvCacheTypeK.rawValue, for: Keys.kvCacheTypeK) }
+    }
+    @Published var kvCacheTypeV: RuntimePreferences.KVCacheQuantization {
+        didSet { save(kvCacheTypeV.rawValue, for: Keys.kvCacheTypeV) }
+    }
     @Published var keepModelInMemory: Bool { didSet { save(keepModelInMemory, for: Keys.keepModelInMemory) } }
     @Published var autoOffloadMinutes: Int { didSet { save(autoOffloadMinutes, for: Keys.autoOffloadMinutes) } }
 
@@ -1178,6 +1236,9 @@ enum ModelPathHelper {
         flashAttentionEnabled = defaults.object(forKey: Keys.flashAttentionEnabled) as? Bool ?? false
         mmapEnabled = defaults.object(forKey: Keys.mmapEnabled) as? Bool ?? true
         mlockEnabled = defaults.object(forKey: Keys.mlockEnabled) as? Bool ?? false
+        turboQuantMode = RuntimePreferences.TurboQuantMode(rawValue: defaults.string(forKey: Keys.turboQuantMode) ?? "") ?? .disabled
+        kvCacheTypeK = RuntimePreferences.KVCacheQuantization(rawValue: defaults.string(forKey: Keys.kvCacheTypeK) ?? "") ?? .float16
+        kvCacheTypeV = RuntimePreferences.KVCacheQuantization(rawValue: defaults.string(forKey: Keys.kvCacheTypeV) ?? "") ?? .float16
         keepModelInMemory = defaults.object(forKey: Keys.keepModelInMemory) as? Bool ?? false
         autoOffloadMinutes = defaults.object(forKey: Keys.autoOffloadMinutes) as? Int ?? 5
 
@@ -1345,6 +1406,9 @@ enum ModelPathHelper {
         flashAttentionEnabled = false
         mmapEnabled = true
         mlockEnabled = false
+        turboQuantMode = .disabled
+        kvCacheTypeK = .float16
+        kvCacheTypeV = .float16
         keepModelInMemory = false
         autoOffloadMinutes = 5
 
@@ -1463,6 +1527,9 @@ enum ModelPathHelper {
         static let flashAttentionEnabled = "flashAttentionEnabled"
         static let mmapEnabled = "mmapEnabled"
         static let mlockEnabled = "mlockEnabled"
+        static let turboQuantMode = "turboQuantMode"
+        static let kvCacheTypeK = "kvCacheTypeK"
+        static let kvCacheTypeV = "kvCacheTypeV"
         static let keepModelInMemory = "keepModelInMemory"
         static let autoOffloadMinutes = "autoOffloadMinutes"
 
