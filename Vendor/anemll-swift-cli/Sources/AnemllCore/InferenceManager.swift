@@ -405,7 +405,10 @@ private typealias Float16 = Float
         case .int32:
             return MemoryLayout<Int32>.size
         case .int8:
-            return MemoryLayout<Int8>.size
+            if #available(iOS 26.0, *) {
+                return MemoryLayout<Int8>.size
+            }
+            return MemoryLayout<Float16>.size // fallback for SDKs without int8
         @unknown default:
             return MemoryLayout<Float16>.size
         }

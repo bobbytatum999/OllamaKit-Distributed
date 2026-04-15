@@ -12,14 +12,18 @@ import Metal
 import FoundationModels
 #endif
 
-public actor DeviceCapabilityService {
+// FIX: changed from 'actor' to final class. The interfaceKind() method uses
+// UIDevice.current which is main-thread-only, so callers must hop to MainActor
+// explicitly instead of assuming they're already isolated there.
+public final class DeviceCapabilityService {
     public static let shared = DeviceCapabilityService()
 
-    public func currentProfile() -> DeviceProfile {
-        currentRuntimeProfile().compatibilityProfile
+    public func currentProfile() async -> DeviceProfile {
+        let runtimeProfile = await currentRuntimeProfile()
+        return runtimeProfile.compatibilityProfile
     }
 
-    public func currentRuntimeProfile() -> DeviceRuntimeProfile {
+    public func currentRuntimeProfile() async -> DeviceRuntimeProfile {
         let physicalMemory = Int64(ProcessInfo.processInfo.physicalMemory)
         let machineIdentifier = machineIdentifier()
         let recommendedBudget = max(
@@ -37,7 +41,7 @@ public actor DeviceCapabilityService {
             chipFamily: chipFamily(for: machineIdentifier),
             systemVersion: systemVersionString(),
             physicalMemoryBytes: physicalMemory,
-            interfaceKind: interfaceKind(),
+            interfaceKind: await MainActor.run { interfaceKind() },
             recommendedGGUFBudgetBytes: recommendedBudget,
             supportedGGUFBudgetBytes: supportedBudget,
             hasMetalDevice: metalDevice != nil,
@@ -57,7 +61,7 @@ public actor DeviceCapabilityService {
     }
 
     public func compatibilityForGGUFSize(_ sizeBytes: Int64?) async -> CompatibilityReport {
-        let profile = currentRuntimeProfile()
+        let profile = await currentRuntimeProfile()
         guard let sizeBytes, sizeBytes > 0 else {
             return CompatibilityReport(
                 backendKind: .ggufLlama,
@@ -246,7 +250,7 @@ public actor DeviceCapabilityService {
         return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
     }
 
-    private func interfaceKind() -> DeviceInterfaceKind {
+    @MainActor private func interfaceKind() -> DeviceInterfaceKind {
         #if canImport(UIKit)
         switch UIDevice.current.userInterfaceIdiom {
         case .phone:

@@ -540,8 +540,19 @@ public actor ModelRegistryStore {
     }
 
     private func buildManifestForGGUF(entry: ModelCatalogEntry, localFileURL: URL) throws -> ModelPackageManifest {
-        let sha = try sha256(for: localFileURL)
-        let size = (try fileManager.attributesOfItem(atPath: localFileURL.path)[.size] as? NSNumber)?.int64Value
+        let fileAttributes = try fileManager.attributesOfItem(atPath: localFileURL.path)
+        let size = (fileAttributes[.size] as? NSNumber)?.int64Value
+
+        // FIX: Skip SHA-256 for files > 100MB to prevent OOM crash on iPhone.
+        // sha256() reads the entire file in 1MB chunks, which for multi-GB GGUF
+        // files causes the iOS memory watchdog to kill the app. For large model
+        // files, the combination of (filename + size) is sufficient for identity.
+        let sha: String
+        if let size, size > 100_000_000 {
+            sha = "skipped-large-file-\(size)"
+        } else {
+            sha = try sha256(for: localFileURL)
+        }
 
         return ModelPackageManifest(
             modelId: entry.sourceModelID,
@@ -587,11 +598,25 @@ public actor ModelRegistryStore {
             guard values.isRegularFile == true else { continue }
 
             let relativePath = fileURL.path.replacingOccurrences(of: rootURL.path + "/", with: "")
+            let sizeBytes = values.fileSize.map(Int64.init)
+
+            // FIX: Skip SHA-256 for files > 100MB to prevent OOM crash.
+            // CoreML packages routinely contain multi-gigabyte compiled model files
+            // (.mlmodelc, .mlpackage). sha256() reads the entire file in 1MB chunks,
+            // which for multi-GB files causes the iOS memory watchdog to kill the app.
+            // The same threshold is already applied to GGUF files in buildManifestForGGUF.
+            let sha: String
+            if let size = sizeBytes, size > 100_000_000 {
+                sha = "skipped-large-file-\(size)"
+            } else {
+                sha = try sha256(for: fileURL)
+            }
+
             files.append(
                 ModelPackageFile(
                     path: relativePath,
-                    sha256: try sha256(for: fileURL),
-                    sizeBytes: values.fileSize.map(Int64.init)
+                    sha256: sha,
+                    sizeBytes: sizeBytes
                 )
             )
         }

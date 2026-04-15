@@ -56,7 +56,7 @@ let package = Package(
     name: "OllamaKit",
     platforms: [
         .iOS("26.0"),
-        .macOS("15.0")
+        .macOS("26.0")
     ],
     products: products,
     dependencies: [

@@ -2,13 +2,13 @@ import Foundation
 import OllamaCore
 import SwiftUI
 import UIKit
+import CoreImage.CIFilterBuiltins
 #if canImport(Darwin)
 import Darwin
 #endif
 
 struct ServerView: View {
     @ObservedObject private var settings = AppSettings.shared
-    @StateObject private var relay = ManagedRelayService.shared
     @StateObject private var viewModel = ServerViewModel()
     
     var body: some View {
@@ -58,38 +58,23 @@ struct ServerView: View {
                 }
             }
         }
-        .onChange(of: settings.serverPort) {
+        .onChange(of: settings.serverPort) { _, _ in
             Task {
                 await viewModel.restartServerIfNeeded()
             }
         }
-        .onChange(of: settings.serverExposureMode) {
+        .onChange(of: settings.serverExposureMode) { _, _ in
             Task {
                 await viewModel.restartServerIfNeeded()
                 await viewModel.refreshPublicHealth()
             }
         }
-        .onChange(of: settings.publicBaseURL) {
+        .onChange(of: settings.publicBaseURL) { _, _ in
             Task {
                 await viewModel.refreshPublicHealth()
             }
         }
-        .onChange(of: settings.managedRelayBaseURL) {
-            Task {
-                await viewModel.refreshPublicHealth()
-            }
-        }
-        .onChange(of: settings.managedRelayAssignedURL) {
-            Task {
-                await viewModel.refreshPublicHealth()
-            }
-        }
-        .onChange(of: settings.requireApiKey) {
-            Task {
-                await viewModel.refreshPublicHealth()
-            }
-        }
-        .onChange(of: relay.state) {
+        .onChange(of: settings.requireApiKey) { _, _ in
             Task {
                 await viewModel.refreshPublicHealth()
             }
@@ -259,14 +244,71 @@ struct ConnectionInfoCard: View {
                         tint: viewModel.publicHealthColor
                     )
 
-                    if AppSettings.shared.serverExposureMode == .publicManaged {
-                        HealthStatusRow(
-                            title: "Relay State",
-                            status: ManagedRelayService.shared.state.rawValue.capitalized,
-                            tint: viewModel.publicHealthColor
-                        )
-                    }
+
                 }
+            }
+
+            if viewModel.isRunning {
+                let serverURL = viewModel.networkURL.isEmpty ? AppSettings.shared.localServerURL : viewModel.networkURL
+                Divider()
+                
+                VStack(spacing: 12) {
+                    Text("QR Code")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    
+                    if let qrImage = generateQRCode(from: serverURL) {
+                        Image(uiImage: qrImage)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 140, height: 140)
+                            .padding(12)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    
+                    HStack(spacing: 12) {
+                        Button {
+                            UIPasteboard.general.string = serverURL
+                            showingCopiedAlert = true
+                        } label: {
+                            Label("Copy URL", systemImage: "doc.on.doc")
+                                .font(.system(size: 13))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        
+                        ShareLink(item: serverURL) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                                .font(.system(size: 13))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    
+                    Text(serverURL)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            } else {
+                Divider()
+                HStack(spacing: 12) {
+                    Image(systemName: "qrcode")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.tertiary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Server Not Running")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Start the server to generate a QR code")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 8)
             }
 
             Text("Background availability is best-effort on iOS. The app can restart the server after background task wakeups, but iOS may still suspend the process.")
@@ -441,42 +483,7 @@ struct ServerSettingsSection: View {
             .pickerStyle(.menu)
             .padding(.vertical, 12)
 
-            if settings.serverExposureMode == .publicManaged {
-                Divider()
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Managed Relay Service URL")
-                        .font(.system(size: 16, weight: .medium))
-
-                    Text("OllamaKit will register this device with the relay service, keep a device tunnel open, and surface the assigned worldwide public URL when the relay connects.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-
-                    TextField("https://your-relay-service.workers.dev", text: $settings.managedRelayBaseURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.system(size: 14, design: .monospaced))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(.ultraThinMaterial)
-                        )
-
-                    if settings.normalizedManagedRelayBaseURL == nil {
-                        Text("Enter a valid http:// or https:// relay service URL to use Managed Public URL mode.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.orange)
-                    }
-
-                    if let assignedURL = settings.managedRelayAssignedURL.nonEmpty {
-                        Text("Assigned URL: \(assignedURL)")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 12)
-            }
 
             if settings.serverExposureMode == .publicCustom {
                 Divider()
@@ -1361,31 +1368,6 @@ class ServerViewModel: ObservableObject {
             return
         }
 
-        if AppSettings.shared.serverExposureMode == .publicManaged {
-            let relay = ManagedRelayService.shared
-            guard AppSettings.shared.normalizedManagedRelayBaseURL != nil else {
-                publicHealthState = AppSettings.shared.managedRelayBaseURL.trimmedForLookup.isEmpty ? .notConfigured : .invalid
-                return
-            }
-
-            guard isRunning else {
-                publicHealthState = .unreachable("The on-device server is not running.")
-                return
-            }
-
-            switch relay.state {
-            case .connected:
-                publicHealthState = .healthy
-            case .registering, .connecting:
-                publicHealthState = .checking
-            case .error:
-                publicHealthState = .unreachable(relay.lastError ?? "Managed relay failed.")
-            case .disconnected:
-                publicHealthState = .unreachable("The managed relay is disconnected.")
-            }
-            return
-        }
-
         guard let urlString = AppSettings.shared.normalizedPublicBaseURL else {
             publicHealthState = AppSettings.shared.publicBaseURL.trimmedForLookup.isEmpty ? .notConfigured : .invalid
             return
@@ -1482,6 +1464,18 @@ class ServerViewModel: ObservableObject {
         
         networkURL = "http://\(address):\(AppSettings.shared.serverPort)"
     }
+}
+
+private func generateQRCode(from string: String, size: CGFloat = 200) -> UIImage? {
+    let context = CIContext()
+    let filter = CIFilter.qrCodeGenerator()
+    filter.message = Data(string.utf8)
+    filter.correctionLevel = "M"
+    guard let outputImage = filter.outputImage else { return nil }
+    let transform = CGAffineTransform(scaleX: size/outputImage.extent.width, y: size/outputImage.extent.height)
+    let scaledImage = outputImage.transformed(by: transform)
+    guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else { return nil }
+    return UIImage(cgImage: cgImage)
 }
 
 #Preview {

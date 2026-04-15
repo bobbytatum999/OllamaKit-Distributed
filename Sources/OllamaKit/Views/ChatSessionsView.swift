@@ -133,6 +133,13 @@ struct ChatSessionRow: View {
 }
 
 struct EmptyChatsView: View {
+    @StateObject private var modelStore = ModelStorage.shared
+    @State private var navigateToModels = false
+    
+    private var hasNoModels: Bool {
+        modelStore.selectionSnapshots.isEmpty
+    }
+    
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -142,23 +149,101 @@ struct EmptyChatsView: View {
                     .fill(.ultraThinMaterial)
                     .frame(width: 100, height: 100)
                 
-                Image(systemName: "bubble.left.and.bubble.right.fill")
-                    .font(.system(size: 40))
+                Image(systemName: hasNoModels ? "cube.box" : "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: hasNoModels ? 36 : 40))
                     .foregroundStyle(.secondary)
             }
             
-            Text("No Chats Yet")
-                .font(.system(size: 22, weight: .bold))
-            
-            Text("Start a new conversation with your local AI models")
-                .font(.system(size: 16))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+            if hasNoModels {
+                Text("Welcome!")
+                    .font(.system(size: 28, weight: .bold))
+                
+                Text("Download your first model to get started. We recommend Llama 3.2 1B for a fast, lightweight experience.")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                
+                VStack(spacing: 12) {
+                    // Featured model card
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(hex: "8B5CF6").opacity(0.2))
+                                    .frame(width: 40, height: 40)
+                                Image(systemName: "cpu")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(Color(hex: "8B5CF6"))
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Llama 3.2 1B")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("1.3 GB")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(Color(hex: "8B5CF6"))
+                        }
+                        Text("Fast, lightweight, and great for everyday use")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color(hex: "8B5CF6").opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color(hex: "8B5CF6").opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                    .padding(.horizontal, 24)
+                    .onTapGesture {
+                        navigateToModels = true
+                    }
+                    
+                    Button {
+                        navigateToModels = true
+                    } label: {
+                        Text("Browse Models")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color(hex: "8B5CF6"))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 24)
+                }
+            } else {
+                Text("No Chats Yet")
+                    .font(.system(size: 22, weight: .bold))
+                
+                Text("Start a new conversation with your local AI models")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
             
             Spacer()
         }
         .frame(maxWidth: .infinity, minHeight: 400)
+        .onChange(of: navigateToModels) { _, newValue in
+            if newValue {
+                // Switch to Models tab (tab index 1)
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let tabView = windowScene.windows.first?.rootViewController as? UITabBarController {
+                    tabView.selectedIndex = 1
+                }
+                navigateToModels = false
+            }
+        }
     }
 }
 

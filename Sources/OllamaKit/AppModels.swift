@@ -80,6 +80,8 @@ enum ServerLogCategory: String, CaseIterable, Identifiable, Codable, Sendable {
     case response
     case health
     case relay
+    case lifecycle
+    case network
     case error
 
     var id: String { rawValue }
@@ -295,17 +297,69 @@ final class ServerLogStore: ObservableObject {
     }
 }
 
+enum AppLogLevel: String, Codable, CaseIterable, Identifiable {
+    case debug
+    case info
+    case warning
+    case error
+
+    var id: String { rawValue }
+}
+
+enum AppLogCategory: String, Codable, CaseIterable, Identifiable {
+    case app
+    case chat
+    case model
+    case modelsCatalog = "models_catalog"
+    case huggingFace = "huggingface"
+    case settings
+
+    var id: String { rawValue }
+}
+
+struct AppLogEntry: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    let timestamp: Date
+    let level: AppLogLevel
+    let category: AppLogCategory
+    let title: String
+    let message: String
+    let metadata: [String: String]
+    let body: String?
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = .now,
+        level: AppLogLevel = .info,
+        category: AppLogCategory,
+        title: String,
+        message: String,
+        metadata: [String: String] = [:],
+        body: String? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.level = level
+        self.category = category
+        self.title = title
+        self.message = message
+        self.metadata = metadata
+        self.body = body?.nonEmpty
+    }
+}
+
 @MainActor
 final class AppLogStore: ObservableObject {
     static let shared = AppLogStore()
     private static let storageURL = AppPersistencePaths.logsDirectoryURL.appendingPathComponent("app-log-buffer.json")
-    private let maxEntries = 800
+    private let maxEntries = 1200
 
     @Published private(set) var entries: [AppLogEntry] = []
 
     var retentionLimit: Int { maxEntries }
     var storageLocationDescription: String { "Application Support/Logs/app-log-buffer.json" }
-    var persistenceSummary: String { "App debug logs only (excludes server logs). Keeps latest \(maxEntries) events." }
+    var storagePath: String { Self.storageURL.path }
+    var persistenceSummary: String { "Stored on device. Keeps the latest \(maxEntries) app/model/chat entries until you clear them." }
 
     private init() {
         entries = PersistentJSONStore.load([AppLogEntry].self, from: Self.storageURL, fallback: []).map(Self.sanitized)
@@ -316,20 +370,21 @@ final class AppLogStore: ObservableObject {
         level: AppLogLevel = .info,
         title: String,
         message: String,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
+        body: String? = nil
     ) {
         entries.append(
             Self.sanitized(
                 AppLogEntry(
-                    level: level,
-                    category: category,
-                    title: title,
-                    message: message,
-                    metadata: metadata
+                level: level,
+                category: category,
+                title: title,
+                message: message,
+                metadata: metadata,
+                body: body
                 )
             )
         )
-
         let overflow = entries.count - maxEntries
         if overflow > 0 {
             entries.removeFirst(overflow)
@@ -340,6 +395,20 @@ final class AppLogStore: ObservableObject {
     func clear() {
         entries.removeAll()
         persist()
+    }
+
+    func exportText() -> String {
+        entries.map { entry in
+            let timestamp = ISO8601DateFormatter().string(from: entry.timestamp)
+            let metadataText = entry.metadata
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: " ")
+            let metadataSuffix = metadataText.isEmpty ? "" : "\n\(metadataText)"
+            let bodySuffix = entry.body.map { "\n\($0)" } ?? ""
+            return "[\(timestamp)] [\(entry.level.rawValue.uppercased())] [\(entry.category.rawValue)] \(entry.title)\n\(entry.message)\(metadataSuffix)\(bodySuffix)"
+        }
+        .joined(separator: "\n\n")
     }
 
     private func persist() {
@@ -354,74 +423,9 @@ final class AppLogStore: ObservableObject {
             category: entry.category,
             title: PersistentLogRedactor.redact(entry.title) ?? entry.title,
             message: PersistentLogRedactor.redact(entry.message) ?? entry.message,
-            metadata: PersistentLogRedactor.redact(metadata: entry.metadata)
+            metadata: PersistentLogRedactor.redact(metadata: entry.metadata),
+            body: PersistentLogRedactor.redact(entry.body)
         )
-    }
-}
-
-struct ModelPerformanceSample: Identifiable, Hashable, Codable, Sendable {
-    enum Phase: String, Codable, CaseIterable, Sendable {
-        case load
-        case generate
-    }
-
-    let id: UUID
-    let timestamp: Date
-    let modelID: String
-    let phase: Phase
-    let elapsedMs: Double
-    let tokens: Int
-    let tokensPerSecond: Double
-    let wasSuccessful: Bool
-    let notes: String?
-
-    init(
-        id: UUID = UUID(),
-        timestamp: Date = .now,
-        modelID: String,
-        phase: Phase,
-        elapsedMs: Double,
-        tokens: Int = 0,
-        tokensPerSecond: Double = 0,
-        wasSuccessful: Bool,
-        notes: String? = nil
-    ) {
-        self.id = id
-        self.timestamp = timestamp
-        self.modelID = modelID
-        self.phase = phase
-        self.elapsedMs = elapsedMs
-        self.tokens = tokens
-        self.tokensPerSecond = tokensPerSecond
-        self.wasSuccessful = wasSuccessful
-        self.notes = notes
-    }
-}
-
-@MainActor
-final class ModelPerformanceStore: ObservableObject {
-    static let shared = ModelPerformanceStore()
-    private static let storageURL = AppPersistencePaths.logsDirectoryURL.appendingPathComponent("model-performance-buffer.json")
-    private let maxEntries = 300
-
-    @Published private(set) var entries: [ModelPerformanceSample] = []
-
-    private init() {
-        entries = PersistentJSONStore.load([ModelPerformanceSample].self, from: Self.storageURL, fallback: [])
-    }
-
-    func record(_ sample: ModelPerformanceSample) {
-        entries.append(sample)
-        let overflow = entries.count - maxEntries
-        if overflow > 0 {
-            entries.removeFirst(overflow)
-        }
-        PersistentJSONStore.save(entries, to: Self.storageURL)
-    }
-
-    func clear() {
-        entries.removeAll()
-        PersistentJSONStore.save(entries, to: Self.storageURL)
     }
 }
 
@@ -483,7 +487,7 @@ final class DownloadedModel {
     }
 
     var runtimeContextLength: Int {
-        max(AppSettings.shared.defaultContextLength, 512)
+        (UserDefaults.standard.object(forKey: "defaultContextLength") as? Int) ?? 4096
     }
 
     var persistentReference: String {
@@ -620,6 +624,7 @@ enum BuiltInModelCatalog {
     static let appleOnDeviceModelID = SystemModelCatalog.appleFoundationCatalogID
     static let appleOnDeviceModelName = SystemModelCatalog.appleFoundationModelName
 
+    @MainActor
     static func appleOnDeviceModel() -> ModelSnapshot {
         ModelSnapshot(
             entry: SystemModelCatalog.appleFoundationEntry(
@@ -628,6 +633,7 @@ enum BuiltInModelCatalog {
         )
     }
 
+    @MainActor
     static func selectionModels(downloadedModels: [ModelSnapshot]) -> [ModelSnapshot] {
         let appleIsAvailable = availability().isAvailable
 
@@ -643,6 +649,7 @@ enum BuiltInModelCatalog {
         }
     }
 
+    @MainActor
     static func resolveStoredReference(_ candidate: String, in downloadedModels: [ModelSnapshot]) -> ModelSnapshot? {
         ModelSnapshot.resolveStoredReference(candidate, in: selectionModels(downloadedModels: downloadedModels))
     }
@@ -695,6 +702,7 @@ final class ChatSession {
     var systemPrompt: String
     var createdAt: Date
     var updatedAt: Date
+    var parentMessageId: UUID?
 
     @Relationship(deleteRule: .cascade, inverse: \ChatMessage.session)
     var messages: [ChatMessage]?
@@ -705,7 +713,8 @@ final class ChatSession {
         systemPrompt: String = "You are a helpful assistant.",
         createdAt: Date = .now,
         updatedAt: Date = .now,
-        messages: [ChatMessage]? = []
+        messages: [ChatMessage]? = [],
+        parentMessageId: UUID? = nil
     ) {
         self.id = UUID()
         self.title = title ?? "New Chat"
@@ -714,6 +723,7 @@ final class ChatSession {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.messages = messages
+        self.parentMessageId = parentMessageId
     }
 
     var orderedMessages: [ChatMessage] {
@@ -737,6 +747,9 @@ final class ChatMessage {
     var generationTime: Double
     var isGenerating: Bool
     var session: ChatSession?
+    var imageData: Data?
+    var parentMessageId: UUID?
+    var branchPoint: Bool
 
     init(
         role: ChatRole,
@@ -753,6 +766,9 @@ final class ChatMessage {
         self.tokenCount = tokenCount
         self.generationTime = generationTime
         self.isGenerating = isGenerating
+        self.imageData = nil
+        self.parentMessageId = nil
+        self.branchPoint = false
     }
 
     var role: ChatRole {
@@ -1089,8 +1105,12 @@ enum ModelPathHelper {
     }
 }
 
-final class AppSettings: ObservableObject {
+// FIX: @MainActor required because AppSettings is ObservableObject with @Published properties
+// that are accessed from SwiftUI views (always on main thread) and from async contexts.
+// Making it @MainActor ensures all property access and mutations are thread-safe.
+@MainActor final class AppSettings: ObservableObject {
     static let shared = AppSettings()
+    private static let recommendedGPULayers = 100
 
     @Published var defaultTemperature: Double { didSet { save(defaultTemperature, for: Keys.defaultTemperature) } }
     @Published var defaultTopP: Double { didSet { save(defaultTopP, for: Keys.defaultTopP) } }
@@ -1103,6 +1123,7 @@ final class AppSettings: ObservableObject {
     @Published var threads: Int { didSet { save(threads, for: Keys.threads) } }
     @Published var batchSize: Int { didSet { save(batchSize, for: Keys.batchSize) } }
     @Published var gpuLayers: Int { didSet { save(gpuLayers, for: Keys.gpuLayers) } }
+    @Published var kvCachePresetRaw: String { didSet { save(kvCachePresetRaw, for: Keys.kvCachePresetRaw) } }
     @Published var flashAttentionEnabled: Bool { didSet { save(flashAttentionEnabled, for: Keys.flashAttentionEnabled) } }
     @Published var mmapEnabled: Bool { didSet { save(mmapEnabled, for: Keys.mmapEnabled) } }
     @Published var mlockEnabled: Bool { didSet { save(mlockEnabled, for: Keys.mlockEnabled) } }
@@ -1210,7 +1231,8 @@ final class AppSettings: ObservableObject {
 
         threads = defaults.object(forKey: Keys.threads) as? Int ?? max(ProcessInfo.processInfo.processorCount - 1, 1)
         batchSize = defaults.object(forKey: Keys.batchSize) as? Int ?? 512
-        gpuLayers = defaults.object(forKey: Keys.gpuLayers) as? Int ?? 0
+        gpuLayers = defaults.object(forKey: Keys.gpuLayers) as? Int ?? Self.recommendedGPULayers
+        kvCachePresetRaw = defaults.string(forKey: Keys.kvCachePresetRaw) ?? RuntimePreferences.KVCachePreset.platformDefault.rawValue
         flashAttentionEnabled = defaults.object(forKey: Keys.flashAttentionEnabled) as? Bool ?? false
         mmapEnabled = defaults.object(forKey: Keys.mmapEnabled) as? Bool ?? true
         mlockEnabled = defaults.object(forKey: Keys.mlockEnabled) as? Bool ?? false
@@ -1301,6 +1323,15 @@ final class AppSettings: ObservableObject {
         serverExposureMode.allowsRemoteConnections
     }
 
+    var kvCachePreset: RuntimePreferences.KVCachePreset {
+        get {
+            RuntimePreferences.KVCachePreset(rawValue: kvCachePresetRaw) ?? .platformDefault
+        }
+        set {
+            kvCachePresetRaw = newValue.rawValue
+        }
+    }
+
     var normalizedPublicBaseURL: String? {
         Self.sanitizedPublicBaseURL(from: publicBaseURL)
     }
@@ -1370,7 +1401,8 @@ final class AppSettings: ObservableObject {
 
         threads = max(ProcessInfo.processInfo.processorCount - 1, 1)
         batchSize = 512
-        gpuLayers = 0
+        gpuLayers = Self.recommendedGPULayers
+        kvCachePresetRaw = RuntimePreferences.KVCachePreset.platformDefault.rawValue
         flashAttentionEnabled = false
         mmapEnabled = true
         mlockEnabled = false
@@ -1491,6 +1523,7 @@ final class AppSettings: ObservableObject {
         static let threads = "threads"
         static let batchSize = "batchSize"
         static let gpuLayers = "gpuLayers"
+        static let kvCachePresetRaw = "kvCachePresetRaw"
         static let flashAttentionEnabled = "flashAttentionEnabled"
         static let mmapEnabled = "mmapEnabled"
         static let mlockEnabled = "mlockEnabled"
@@ -1536,5 +1569,58 @@ final class AppSettings: ObservableObject {
         static let agentBrowserLastURL = "agentBrowserLastURL"
         static let agentBundleExpertMode = "agentBundleExpertMode"
         static let agentModelCapabilityOverrides = "agentModelCapabilityOverrides"
+    }
+}
+
+// MARK: - Automation Models
+
+@Model
+final class SavedAutomation {
+    var id: UUID
+    var name: String
+    var createdAt: Date
+    var triggerType: String // "manual" | "cron" | "webhook"
+    var cronSchedule: String? // e.g. "0 8 * * *"
+    var stepsJSON: String // serialized [AutomationStep]
+    var isEnabled: Bool
+    var lastRunAt: Date?
+    var lastRunResult: String?
+
+    init(
+        id: UUID = UUID(),
+        name: String = "",
+        createdAt: Date = Date(),
+        triggerType: String = "manual",
+        cronSchedule: String? = nil,
+        stepsJSON: String = "[]",
+        isEnabled: Bool = true,
+        lastRunAt: Date? = nil,
+        lastRunResult: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.triggerType = triggerType
+        self.cronSchedule = cronSchedule
+        self.stepsJSON = stepsJSON
+        self.isEnabled = isEnabled
+        self.lastRunAt = lastRunAt
+        self.lastRunResult = lastRunResult
+    }
+}
+
+public struct AutomationStep: Codable, Identifiable {
+    public var id: String
+    public var service: String // "llm" | "http" | "notify"
+    public var action: String
+    public var params: [String: String]
+    public var outputKey: String
+
+    public init(id: String = UUID().uuidString, service: String, action: String, params: [String: String] = [:], outputKey: String = "") {
+        self.id = id
+        self.service = service
+        self.action = action
+        self.params = params
+        self.outputKey = outputKey
     }
 }

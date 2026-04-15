@@ -8,6 +8,7 @@ typealias ModelError = InferenceError
 typealias ModelParameters = SamplingParameters
 
 extension SamplingParameters {
+    @MainActor
     static var appDefault: SamplingParameters {
         let settings = AppSettings.shared
         return SamplingParameters(
@@ -21,6 +22,7 @@ extension SamplingParameters {
     }
 }
 
+@MainActor
 struct ModelSnapshot: Identifiable, Hashable, Sendable {
     let catalogId: String
     let sourceModelID: String
@@ -196,7 +198,9 @@ struct ModelSnapshot: Identifiable, Hashable, Sendable {
     }
 
     var configuredAgentCapabilityOverride: ModelAgentCapabilityOverride? {
-        AppSettings.shared.agentCapabilityOverride(for: catalogId)
+        return MainActor.assumeIsolated {
+            AppSettings.shared.agentCapabilityOverride(for: catalogId)
+        }
     }
 
     var hasAgentCapabilityOverride: Bool {
@@ -267,12 +271,14 @@ struct ModelSnapshot: Identifiable, Hashable, Sendable {
 }
 
 extension RuntimePreferences {
+    @MainActor
     static func fromSettings(_ settings: AppSettings = .shared, contextLength: Int? = nil) -> RuntimePreferences {
-        RuntimePreferences(
+        return RuntimePreferences(
             contextLength: max(contextLength ?? settings.defaultContextLength, 512),
             gpuLayers: settings.gpuLayers,
             threads: settings.threads,
             batchSize: settings.batchSize,
+            kvCachePreset: settings.kvCachePreset,
             flashAttentionEnabled: settings.flashAttentionEnabled,
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,
@@ -330,11 +336,40 @@ final class ModelStorage: ObservableObject {
     }
 
     func refresh() async {
+        await MainActor.run {
+            AppLogStore.shared.record(
+                .modelsCatalog,
+                level: .info,
+                title: "Catalog Refresh Started",
+                message: "Refreshing model catalog"
+            )
+        }
+
         do {
             let entries = try await RuntimeCoordinator.shared.availableEntries(contextLength: AppSettings.shared.defaultContextLength)
+            let installedModels = entries.filter { !$0.isBuiltInAppleModel }
+            let totalSize = installedModels.reduce(0) { $0 + $1.capabilitySummary.sizeBytes }
             snapshots = entries.map(ModelSnapshot.init(entry:))
+
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .info,
+                    title: "Catalog Refresh Completed",
+                    message: "Found \(installedModels.count) models",
+                    metadata: ["total_models": "\(installedModels.count)", "total_size": "\(totalSize)"]
+                )
+            }
         } catch {
-            print("Failed to refresh model registry: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to refresh model registry",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
     }
 
@@ -350,9 +385,52 @@ final class ModelStorage: ObservableObject {
                 contextLength: seed.contextLength,
                 serverCapabilities: seed.serverCapabilities
             )
+
+            // FIX: Wrap validation in do-catch to prevent download from appearing to fail
+            // just because validation failed
+            do {
+                _ = await validateModel(catalogId: entry.catalogId)
+            } catch {
+                await MainActor.run {
+                    AppLogStore.shared.record(
+                        .modelsCatalog,
+                        level: .warning,
+                        title: "Model Downloaded but Validation Failed",
+                        message: "\(seed.name) was downloaded but validation failed: \(error.localizedDescription)",
+                        metadata: [
+                            "catalog_id": entry.catalogId,
+                            "error": error.localizedDescription
+                        ]
+                    )
+                }
+            }
+
             await refresh()
+
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .info,
+                    title: "Model Added to Catalog",
+                    message: "Added: \(seed.name)",
+                    metadata: [
+                        "catalog_id": entry.catalogId,
+                        "source": "download",
+                        "quantization": seed.quantization,
+                        "size_bytes": "\(seed.size)"
+                    ]
+                )
+            }
         } catch {
-            print("Failed to upsert downloaded model into registry: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to upsert downloaded model into registry",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
     }
 
@@ -361,6 +439,26 @@ final class ModelStorage: ObservableObject {
             from: sourceURL,
             defaultContextLength: AppSettings.shared.defaultContextLength
         )
+
+        // FIX: Wrap validation in do-catch to prevent import from failing
+        // just because validation failed - the model is still imported
+        do {
+            _ = await validateModel(catalogId: entry.catalogId)
+        } catch {
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .warning,
+                    title: "Model Imported but Validation Failed",
+                    message: "\(entry.displayName) was imported but validation failed: \(error.localizedDescription)",
+                    metadata: [
+                        "catalog_id": entry.catalogId,
+                        "error": error.localizedDescription
+                    ]
+                )
+            }
+        }
+
         await refresh()
         return snapshot(name: entry.catalogId) ?? ModelSnapshot(entry: entry)
     }
@@ -391,15 +489,43 @@ final class ModelStorage: ObservableObject {
                 AppSettings.shared.defaultModelId = ""
             }
             await refresh()
+
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .warning,
+                    title: "Model Removed from Catalog",
+                    message: "Removed model: \(catalogId)",
+                    metadata: ["catalog_id": catalogId]
+                )
+            }
             return true
         } catch {
-            print("Failed to delete model from registry: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to delete model from registry",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                )
+            }
             return false
         }
     }
 
     @discardableResult
     func validateModel(catalogId: String) async -> ModelSnapshot? {
+        await MainActor.run {
+            AppLogStore.shared.record(
+                .modelsCatalog,
+                level: .debug,
+                title: "Model Validation Started",
+                message: "Validating model: \(catalogId)",
+                metadata: ["catalog_id": catalogId]
+            )
+        }
+
         do {
             guard let entry = try await RuntimeCoordinator.shared.resolveModelReference(
                 catalogId,
@@ -411,19 +537,77 @@ final class ModelStorage: ObservableObject {
             let runtime = RuntimePreferences.validationBaseline(
                 contextLength: min(entry.runtimeContextLength, AppSettings.shared.defaultContextLength)
             )
-            let outcome = try await RuntimeCoordinator.shared.validateModel(
-                catalogId: entry.catalogId,
-                runtime: runtime
-            )
+
+            // FIX: Wrap validation in a separate task with its own error handling
+            // to prevent crashes from propagating and crashing the app
+            let outcome: ModelValidationOutcome
+            do {
+                outcome = try await RuntimeCoordinator.shared.validateModel(
+                    catalogId: entry.catalogId,
+                    runtime: runtime
+                )
+            } catch {
+                // If validation throws, create a failed outcome
+                outcome = ModelValidationOutcome(
+                    status: .failed,
+                    message: "Validation error: \(error.localizedDescription)"
+                )
+            }
 
             _ = try await ModelRegistryStore.shared.updateValidation(
                 catalogId: entry.catalogId,
                 outcome: outcome
             )
             await refresh()
-            return snapshot(name: entry.catalogId)
+            let resultSnapshot = snapshot(name: entry.catalogId)
+            let summary = resultSnapshot?.validationSummary
+
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .info,
+                    title: "Model Validation Completed",
+                    message: "Validation completed for: \(catalogId)",
+                    metadata: ["catalog_id": catalogId, "status": "\(outcome.status)", "summary": summary ?? "none"]
+                )
+            }
+            return resultSnapshot
         } catch {
-            print("Failed to validate model \(catalogId): \(error)")
+            // FIX: Even if the entire process fails, try to record the failure in the registry
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to validate model",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                )
+            }
+
+            // Try to update the registry with the failure status
+            do {
+                let failedOutcome = ModelValidationOutcome(
+                    status: .failed,
+                    message: "Validation failed: \(error.localizedDescription)"
+                )
+                _ = try await ModelRegistryStore.shared.updateValidation(
+                    catalogId: catalogId,
+                    outcome: failedOutcome
+                )
+                await refresh()
+            } catch {
+                // If we can't even update the registry, just log it
+                await MainActor.run {
+                    AppLogStore.shared.record(
+                        .modelsCatalog,
+                        level: .error,
+                        title: "Failed to update validation status",
+                        message: "Error: \(error.localizedDescription)",
+                        metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                    )
+                }
+            }
+
             return nil
         }
     }
@@ -443,7 +627,15 @@ final class ModelStorage: ObservableObject {
 
             await refresh()
         } catch {
-            print("Failed to delete installed models: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to delete installed models",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
     }
 
@@ -477,9 +669,22 @@ final class ModelStorage: ObservableObject {
             _ = try await ModelRegistryStore.shared.migrateLegacyModels(seeds)
             UserDefaults.standard.set(true, forKey: Self.migrationDefaultsKey)
         } catch {
-            print("Failed to migrate legacy model records: \(error)")
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .error,
+                    title: "Failed to migrate legacy model records",
+                    message: "Error: \(error.localizedDescription)",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
     }
+
+    // UserDefaults key used as a crash-guard journal for in-progress validations.
+    // Any catalogId written here and NOT cleaned up before the next launch means
+    // the app was killed (OOM watchdog or otherwise) while validating that model.
+    private static let validationInProgressKey = "ollamakit.validation.inprogress.v1"
 
     private func validatePendingGGUFModels() async {
         let pendingCatalogIDs = snapshots
@@ -490,8 +695,88 @@ final class ModelStorage: ObservableObject {
             }
             .map(\.catalogId)
 
-        for catalogId in pendingCatalogIDs {
+        // CRASH-LOOP GUARD
+        // If a model's catalogId is already in validationInProgressKey on this launch,
+        // the previous app session was killed while validating it (most likely an OOM
+        // watchdog kill, which leaves the registry entry as .pending and causes an
+        // infinite crash loop on every subsequent launch). Mark those models .failed
+        // immediately so the user can see them and manually revalidate once they have
+        // enough free memory, rather than retrying automatically and crashing again.
+        let previouslyInProgress = Set(
+            (UserDefaults.standard.array(forKey: Self.validationInProgressKey) as? [String]) ?? []
+        )
+
+        if !previouslyInProgress.isEmpty {
+            await MainActor.run {
+                AppLogStore.shared.record(
+                    .modelsCatalog,
+                    level: .warning,
+                    title: "Validation Crash Guard Triggered",
+                    message: "Previous session was terminated during validation of \(previouslyInProgress.count) model(s). Marking as failed to prevent a crash loop.",
+                    metadata: ["affected_ids": previouslyInProgress.sorted().joined(separator: ", ")]
+                )
+            }
+
+            for catalogId in pendingCatalogIDs where previouslyInProgress.contains(catalogId) {
+                let failedOutcome = ModelValidationOutcome(
+                    status: .failed,
+                    message: "Validation was interrupted (the app was terminated, likely due to low memory). Tap Revalidate when other apps are closed and more memory is available."
+                )
+                do {
+                    _ = try await ModelRegistryStore.shared.updateValidation(
+                        catalogId: catalogId,
+                        outcome: failedOutcome
+                    )
+                } catch {
+                    await MainActor.run {
+                        AppLogStore.shared.record(
+                            .modelsCatalog,
+                            level: .error,
+                            title: "Failed to Write Crash-Guard Failure Status",
+                            message: "Could not mark \(catalogId) as failed: \(error.localizedDescription)",
+                            metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                        )
+                    }
+                }
+            }
+        }
+
+        // Clear any stale journal entries from last session before starting this session's work.
+        UserDefaults.standard.removeObject(forKey: Self.validationInProgressKey)
+
+        // Only auto-validate models that were NOT mid-validation when the app last crashed.
+        let safeToValidate = pendingCatalogIDs.filter { !previouslyInProgress.contains($0) }
+
+        guard !safeToValidate.isEmpty else {
+            await refresh()
+            return
+        }
+
+        // Write the full set we're about to validate into the journal BEFORE starting.
+        // If the app is killed partway through, these IDs will be present on the next
+        // launch and the crash-guard above will handle them.
+        UserDefaults.standard.set(safeToValidate, forKey: Self.validationInProgressKey)
+
+        for catalogId in safeToValidate {
+            if Task.isCancelled { break }
+
+            // Small delay between models so memory pressure from the previous
+            // validation can fully settle before the next one begins.
+            if safeToValidate.first != catalogId {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+
             _ = await validateModel(catalogId: catalogId)
+
+            // Successfully finished this model — remove it from the journal so it
+            // is not incorrectly flagged as crashed on the next launch.
+            var remaining = (UserDefaults.standard.array(forKey: Self.validationInProgressKey) as? [String]) ?? []
+            remaining.removeAll { $0 == catalogId }
+            if remaining.isEmpty {
+                UserDefaults.standard.removeObject(forKey: Self.validationInProgressKey)
+            } else {
+                UserDefaults.standard.set(remaining, forKey: Self.validationInProgressKey)
+            }
         }
     }
 }

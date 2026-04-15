@@ -34,6 +34,15 @@ struct ContentView: View {
             }
             .tag(2)
 
+            // Automations Tab
+            NavigationStack {
+                AutomationsView()
+            }
+            .tabItem {
+                Label("Automate", systemImage: "wand.and.stars")
+            }
+            .tag(3)
+
             // Settings Tab
             NavigationStack {
                 SettingsView()
@@ -43,7 +52,7 @@ struct ContentView: View {
             }
             .tag(3)
         }
-        .tint(.accentColor)
+        .tint(Color.accentColor)
         .preferredColorScheme(settings.darkMode ? .dark : .light)
         .onAppear {
             AppLogStore.shared.record(
@@ -94,21 +103,28 @@ struct LiquidGlassModifier: ViewModifier {
                                         .init(x: 0, y: 1), .init(x: 0.5, y: 1), .init(x: 1, y: 1)
                                     ],
                                     colors: [
-                                        .accentColor.opacity(0.1),
-                                        .accentColor.opacity(0.05),
-                                        .accentColor.opacity(0.1),
-                                        .accentColor.opacity(0.05),
-                                        .accentColor.opacity(0.02),
-                                        .accentColor.opacity(0.05),
-                                        .accentColor.opacity(0.1),
-                                        .accentColor.opacity(0.05),
-                                        .accentColor.opacity(0.1)
+                                        Color.accentColor.opacity(0.1),
+                                        Color.accentColor.opacity(0.05),
+                                        Color.accentColor.opacity(0.1),
+                                        Color.accentColor.opacity(0.05),
+                                        Color.accentColor.opacity(0.02),
+                                        Color.accentColor.opacity(0.05),
+                                        Color.accentColor.opacity(0.1),
+                                        Color.accentColor.opacity(0.05),
+                                        Color.accentColor.opacity(0.1)
                                     ]
                                 )
                             )
                             .opacity(intensity)
                     )
-                    .glassEffect(.regular.tint(.accentColor.opacity(intensity)), in: .rect(cornerRadius: radius))
+                    .background(
+                        RoundedRectangle(cornerRadius: radius)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: radius)
+                                    .fill(Color.accentColor.opacity(intensity * 0.5))
+                            )
+                    )
             } else {
                 content
                     .background(
@@ -127,15 +143,15 @@ struct LiquidGlassModifier: ViewModifier {
                                             .init(x: 0, y: 1), .init(x: 0.5, y: 1), .init(x: 1, y: 1)
                                         ],
                                         colors: [
-                                            .accentColor.opacity(0.1),
-                                            .accentColor.opacity(0.05),
-                                            .accentColor.opacity(0.1),
-                                            .accentColor.opacity(0.05),
-                                            .accentColor.opacity(0.02),
-                                            .accentColor.opacity(0.05),
-                                            .accentColor.opacity(0.1),
-                                            .accentColor.opacity(0.05),
-                                            .accentColor.opacity(0.1)
+                                            Color.accentColor.opacity(0.1),
+                                            Color.accentColor.opacity(0.05),
+                                            Color.accentColor.opacity(0.1),
+                                            Color.accentColor.opacity(0.05),
+                                            Color.accentColor.opacity(0.02),
+                                            Color.accentColor.opacity(0.05),
+                                            Color.accentColor.opacity(0.1),
+                                            Color.accentColor.opacity(0.05),
+                                            Color.accentColor.opacity(0.1)
                                         ]
                                     )
                                 )
@@ -181,11 +197,11 @@ struct GlassCard<Content: View>: View {
 
 // MARK: - Animated Background
 
-struct AnimatedMeshBackground: View {
+public struct AnimatedMeshBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase: Double = 0
     
-    var body: some View {
+    public var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
 
