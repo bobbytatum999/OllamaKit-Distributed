@@ -37,6 +37,10 @@
     </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>OllamaKit needs to access your local network to run the API server and allow other devices to connect.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>OllamaKit uses your microphone to transcribe voice input into chat messages.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>OllamaKit uses speech recognition to convert your voice into text.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_http._tcp</string>

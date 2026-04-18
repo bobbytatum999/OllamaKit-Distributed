@@ -211,75 +211,6 @@ private extension ModelCompatibilityLevel {
     }
 }
 
-private enum AgentCapabilityOverrideChoice: String, CaseIterable, Identifiable {
-    case inherited
-    case enabled
-    case disabled
-
-    var id: String { rawValue }
-
-    init(value: Bool?) {
-        switch value {
-        case true:
-            self = .enabled
-        case false:
-            self = .disabled
-        case nil:
-            self = .inherited
-        }
-    }
-
-    var optionalBool: Bool? {
-        switch self {
-        case .inherited:
-            return nil
-        case .enabled:
-            return true
-        case .disabled:
-            return false
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .inherited:
-            return "Default"
-        case .enabled:
-            return "On"
-        case .disabled:
-            return "Off"
-        }
-    }
-}
-
-private struct AgentCapabilitySettingDefinition: Identifiable {
-    let capability: AgentToolCapabilityKey
-    let title: String
-    let detail: String
-
-    var id: String { capability.rawValue }
-}
-
-private let agentCapabilityDefinitions: [AgentCapabilitySettingDefinition] = [
-    AgentCapabilitySettingDefinition(capability: .browserRead, title: "Browser Read", detail: "Open pages, navigate, inspect DOM, and read content."),
-    AgentCapabilitySettingDefinition(capability: .browserActions, title: "Browser Actions", detail: "Type, click, submit forms, and download through the embedded browser."),
-    AgentCapabilitySettingDefinition(capability: .internetRead, title: "Internet Read", detail: "Read public web resources and fetch URLs."),
-    AgentCapabilitySettingDefinition(capability: .internetWrite, title: "Internet Write", detail: "Perform side-effecting network actions such as PR creation or workflow reruns."),
-    AgentCapabilitySettingDefinition(capability: .workspaceRead, title: "Workspace Read", detail: "Read files, search code, and inspect diffs."),
-    AgentCapabilitySettingDefinition(capability: .workspaceWrite, title: "Workspace Write", detail: "Create checkpoints, write files, move paths, and delete workspace content."),
-    AgentCapabilitySettingDefinition(capability: .codeTools, title: "Code Tools", detail: "Use shell-style coding tools and web scaffolding helpers."),
-    AgentCapabilitySettingDefinition(capability: .jsRuntime, title: "JavaScript Runtime", detail: "Execute JavaScript locally with JavaScriptCore."),
-    AgentCapabilitySettingDefinition(capability: .pythonRuntime, title: "Python Runtime", detail: "Run embedded Python when that runtime is bundled."),
-    AgentCapabilitySettingDefinition(capability: .nodeRuntime, title: "Node Runtime", detail: "Run embedded Node.js tooling when that runtime is bundled."),
-    AgentCapabilitySettingDefinition(capability: .swiftRuntime, title: "Swift Runtime", detail: "Run embedded Swift script or SwiftPM tooling when that runtime is bundled."),
-    AgentCapabilitySettingDefinition(capability: .gitRead, title: "Git Read", detail: "Inspect repository state and clone repository workspaces."),
-    AgentCapabilitySettingDefinition(capability: .gitWrite, title: "Git Write", detail: "Create branches and push workspace changes through the configured git/GitHub bridge."),
-    AgentCapabilitySettingDefinition(capability: .githubAccess, title: "GitHub Access", detail: "Use GitHub repository, code search, issues, and PR APIs."),
-    AgentCapabilitySettingDefinition(capability: .remoteCI, title: "Remote CI", detail: "Read or trigger GitHub Actions runs for jobs the phone cannot do locally."),
-    AgentCapabilitySettingDefinition(capability: .managedRelayAccess, title: "Managed Relay", detail: "Inspect or reconnect the managed public relay when this build exposes it."),
-    AgentCapabilitySettingDefinition(capability: .bundleEdits, title: "Bundle Edits", detail: "Allow live bundle resource edits on writable jailbreak-style installs.")
-]
-
 struct ActiveModelSummary: View {
     let model: ModelSnapshot
 
@@ -353,7 +284,6 @@ struct DownloadedModelRow: View {
     let model: ModelSnapshot
     @ObservedObject var viewModel: ModelsViewModel
     @State private var showingOptions = false
-    @State private var showingAgentCapabilities = false
     
     var body: some View {
         HStack(spacing: 16) {
@@ -483,17 +413,10 @@ struct DownloadedModelRow: View {
                 presentModelInfo()
             }
 
-            Button("Agent Tool Access") {
-                showingAgentCapabilities = true
-            }
-
             Button("Delete", role: .destructive) {
                 deleteModel()
             }
             Button("Cancel", role: .cancel) {}
-        }
-        .sheet(isPresented: $showingAgentCapabilities) {
-            ModelAgentCapabilitiesSheet(model: model)
         }
     }
 
@@ -519,7 +442,6 @@ struct DownloadedModelRow: View {
     }
 
     private func presentModelInfo() {
-        let effectiveCapabilities = AgentToolRuntime.shared.effectiveCapabilitiesPreview(for: model) ?? model.effectiveAgentCapabilities
         var details = [
             "Model: \(model.displayName)",
             "Backend: \(model.backendDisplayName)",
@@ -533,14 +455,6 @@ struct DownloadedModelRow: View {
             details.append("Validation: \(model.effectiveValidationStatus.rawValue)")
         }
 
-        details.append("Agent Override: \(model.hasAgentCapabilityOverride ? "Manual" : "Default")")
-        details.append("Agent Browser Read: \(effectiveCapabilities.browserRead ? "On" : "Off")")
-        details.append("Agent Workspace Write: \(effectiveCapabilities.workspaceWrite ? "On" : "Off")")
-        details.append("Agent GitHub Access: \(effectiveCapabilities.githubAccess ? "On" : "Off")")
-        details.append("Agent Swift Runtime: \(effectiveCapabilities.swiftRuntime ? "On" : "Off")")
-        details.append("Agent Managed Relay: \(effectiveCapabilities.managedRelayAccess ? "On" : "Off")")
-        details.append("Agent Bundle Edits: \(effectiveCapabilities.bundleEdits ? "On" : "Off")")
-
         if let runtimeAvailabilityMessage = model.runtimeAvailabilityMessage {
             details.append(runtimeAvailabilityMessage)
         }
@@ -551,6 +465,14 @@ struct DownloadedModelRow: View {
     }
 
     private func revalidateModel() {
+        if model.importSource == .localImport || model.importSource == .coreMLImport {
+            viewModel.alertTitle = "Validation Temporarily Disabled"
+            viewModel.errorMessage = "Imported models can currently crash during recalibration on some builds. Remove and re-import the model instead."
+            viewModel.showError = true
+            HapticManager.notification(.warning)
+            return
+        }
+
         Task {
             let validatedSnapshot = await ModelRunner.shared.validateModel(catalogId: model.catalogId)
             viewModel.alertTitle = "Validation"
@@ -572,128 +494,6 @@ struct DownloadedModelRow: View {
                     HapticManager.notification(.warning)
                 }
             }
-        }
-    }
-}
-
-@MainActor
-struct ModelAgentCapabilitiesSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var settings = AppSettings.shared
-
-    let model: ModelSnapshot
-
-    private var runtimeCapabilities: AgentCapabilityProfile {
-        AgentToolRuntime.shared.runtimeCapabilityPreview()
-    }
-
-    private var runtimePackages: [String: RuntimePackageRecord] {
-        Dictionary(
-            uniqueKeysWithValues: AgentToolRuntime.shared
-                .runtimePackagePreview(for: model)
-                .map { ($0.id, $0) }
-        )
-    }
-
-    private var effectiveCapabilities: ModelAgentCapabilityProfile {
-        AgentToolRuntime.shared.effectiveCapabilitiesPreview(for: model) ?? model.effectiveAgentCapabilities
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Model") {
-                    capabilityInfoRow(title: "Name", value: model.displayName)
-                    capabilityInfoRow(title: "Backend", value: model.backendDisplayName)
-                    capabilityInfoRow(title: "Validation", value: model.effectiveValidationStatus.rawValue)
-                    capabilityInfoRow(title: "Override", value: model.hasAgentCapabilityOverride ? "Manual" : "Default")
-                }
-
-                Section("Runtime") {
-                    capabilityInfoRow(title: "Build Variant", value: settings.buildVariant.title)
-                    capabilityInfoRow(title: "Runtime Tier", value: runtimeCapabilities.runtimeTier.title)
-                    capabilityInfoRow(title: "Embedded Browser", value: runtimePackages["browser"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "JavaScript", value: runtimePackages["javascriptcore"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "Python", value: runtimePackages["python"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "Node", value: runtimePackages["node"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "Swift", value: runtimePackages["swift"]?.statusTitle ?? "Unknown")
-                    capabilityInfoRow(title: "Managed Relay", value: runtimeCapabilities.supportsManagedRelay ? "Available" : "Unavailable")
-                    capabilityInfoRow(title: "Live Bundle Editing", value: runtimeCapabilities.supportsLiveBundleEditing ? "Available" : "Unavailable")
-                }
-
-                Section("Effective Access") {
-                    capabilityInfoRow(title: "Browser Read", value: effectiveCapabilities.browserRead ? "On" : "Off")
-                    capabilityInfoRow(title: "Browser Actions", value: effectiveCapabilities.browserActions ? "On" : "Off")
-                    capabilityInfoRow(title: "Workspace Write", value: effectiveCapabilities.workspaceWrite ? "On" : "Off")
-                    capabilityInfoRow(title: "GitHub Access", value: effectiveCapabilities.githubAccess ? "On" : "Off")
-                    capabilityInfoRow(title: "Swift Runtime", value: effectiveCapabilities.swiftRuntime ? "On" : "Off")
-                    capabilityInfoRow(title: "Managed Relay", value: effectiveCapabilities.managedRelayAccess ? "On" : "Off")
-                    capabilityInfoRow(title: "Remote CI", value: effectiveCapabilities.remoteCI ? "On" : "Off")
-                    capabilityInfoRow(title: "Bundle Edits", value: effectiveCapabilities.bundleEdits ? "On" : "Off")
-                }
-
-                Section("Overrides") {
-                    ForEach(agentCapabilityDefinitions) { definition in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(definition.title)
-                                .font(.system(size: 15, weight: .semibold))
-                            Text(definition.detail)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                            Picker(definition.title, selection: overrideBinding(for: definition.capability)) {
-                                ForEach(AgentCapabilityOverrideChoice.allCases) { choice in
-                                    Text(choice.title).tag(choice)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            Text("Policy Default: \(model.conservativeAgentCapabilities.supports(definition.capability) ? "On" : "Off")")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-            .navigationTitle("Agent Tool Access")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Reset") {
-                        settings.setAgentCapabilityOverride(nil, for: model.catalogId)
-                    }
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-
-    private func overrideBinding(for capability: AgentToolCapabilityKey) -> Binding<AgentCapabilityOverrideChoice> {
-        Binding(
-            get: {
-                let override = settings.agentCapabilityOverride(for: model.catalogId)
-                return AgentCapabilityOverrideChoice(value: override?.value(for: capability))
-            },
-            set: { newValue in
-                var override = settings.agentCapabilityOverride(for: model.catalogId) ?? ModelAgentCapabilityOverride()
-                override = override.setting(newValue.optionalBool, for: capability)
-                settings.setAgentCapabilityOverride(override, for: model.catalogId)
-            }
-        )
-    }
-
-    @ViewBuilder
-    private func capabilityInfoRow(title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
         }
     }
 }
@@ -734,7 +534,6 @@ struct BuiltInAppleModelCard: View {
         title: "Checking",
         message: "Checking Apple Intelligence availability on this device."
     )
-    @State private var showingAgentCapabilities = false
 
     private var model: ModelSnapshot {
         modelStore.selectionSnapshots.first(where: \.isBuiltInAppleModel)
@@ -804,19 +603,12 @@ struct BuiltInAppleModelCard: View {
                         .buttonStyle(.bordered)
                     }
 
-                    Button("Agent Tools") {
-                        showingAgentCapabilities = true
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
             .padding(.vertical, 16)
         }
         .task {
             compatibility = await DeviceCapabilityService.shared.appleFoundationAvailability()
-        }
-        .sheet(isPresented: $showingAgentCapabilities) {
-            ModelAgentCapabilitiesSheet(model: model)
         }
     }
 }
@@ -1223,7 +1015,7 @@ struct ModelDetailSheet: View {
                             ForEach(viewModel.availableFiles) { file in
                                 GGUFFileRow(
                                     file: file,
-                                    compatibility: viewModel.deviceProfile.compatibility(for: file.size),
+                                    compatibility: viewModel.deviceProfile.compatibility(for: file),
                                     viewModel: viewModel
                                 ) {
                                     viewModel.requestDownload(file, modelId: model.modelId)
@@ -1404,12 +1196,14 @@ class ModelsViewModel: ObservableObject {
                     errorMessage = "\(importedModel.displayName) was imported, but it is missing runnable ANEMLL/CoreML metadata. Import the full model folder, not only a compiled bundle."
                 }
             } else if importedModel.backendKind == .ggufLlama {
-                if importedModel.isValidatedRunnable {
-                    errorMessage = "\(importedModel.displayName) is ready to use."
-                } else {
+                if importedModel.effectiveValidationStatus == .failed {
                     alertTitle = "Validation Failed"
                     errorMessage = importedModel.validationSummary
                         ?? "\(importedModel.displayName) imported successfully, but it failed validation on this device."
+                } else if importedModel.isValidatedRunnable {
+                    errorMessage = "\(importedModel.displayName) is ready to use."
+                } else {
+                    errorMessage = "\(importedModel.displayName) imported successfully. Validation will run when you load the model."
                 }
             } else {
                 errorMessage = "\(importedModel.displayName) is ready to use."
@@ -1559,7 +1353,7 @@ class ModelSearchViewModel: ObservableObject {
             await ModelStorage.shared.upsertDownloadedModel(model.registrySeed)
             if let snapshot = ModelStorage.shared.snapshot(name: model.apiIdentifier),
                snapshot.backendKind == .ggufLlama,
-               !snapshot.isValidatedRunnable
+               snapshot.effectiveValidationStatus == .failed
             {
                 downloadErrorTitle = "Validation Failed"
                 downloadError = snapshot.validationSummary
@@ -1582,7 +1376,7 @@ class ModelSearchViewModel: ObservableObject {
     }
 
     func requestDownload(_ file: GGUFInfo, modelId: String) {
-        let compatibility = deviceProfile.compatibility(for: file.size)
+        let compatibility = deviceProfile.compatibility(for: file)
 
         switch compatibility {
         case .recommended, .unknown:
@@ -1810,12 +1604,15 @@ struct ModelDownloadWarning: Identifiable {
         let recommendedBudget = profile.formattedRecommendedBudget
         let supportedBudget = profile.formattedSupportedBudget
         let fileSize = file.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "unknown size"
+        let estimatedWorkingSet = profile.estimatedWorkingSetBytes(for: file)
+            .map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .memory) }
+            ?? "unknown"
 
         switch compatibility {
         case .supported:
-            return "\(filename) (\(fileSize)) is larger than the recommended budget for \(profile.deviceLabel). It may still run, but it can be slower and unload more often.\n\nRecommended: up to \(recommendedBudget)\nMay run: up to \(supportedBudget)"
+            return "\(filename) (\(fileSize)) may still run on \(profile.deviceLabel), but the estimated runtime working set is \(estimatedWorkingSet), so expect slower generation or frequent unload/reload cycles.\n\nRecommended file budget: up to \(recommendedBudget)\nMay run file budget: up to \(supportedBudget)"
         case .tooLarge:
-            return "\(filename) (\(fileSize)) is above the likely working size for \(profile.deviceLabel). You can still download it, but it may fail to load or run poorly.\n\nRecommended: up to \(recommendedBudget)\nMay run: up to \(supportedBudget)"
+            return "\(filename) (\(fileSize)) is likely to fail on \(profile.deviceLabel). Estimated runtime working set: \(estimatedWorkingSet).\n\nRecommended file budget: up to \(recommendedBudget)\nMay run file budget: up to \(supportedBudget)"
         case .recommended, .unknown:
             return "Download \(filename)?"
         }
@@ -1977,8 +1774,21 @@ struct DeviceCapabilityProfile {
         }
     }
 
-    func compatibility(for fileSize: Int64?) -> ModelFileCompatibility {
-        guard let fileSize else { return .unknown }
+    func compatibility(for file: GGUFInfo) -> ModelFileCompatibility {
+        guard let fileSize = file.size else { return .unknown }
+
+        if let estimatedWorkingSet = estimatedWorkingSetBytes(for: file) {
+            let recommendedWorkingSetBudget = Int64(Double(physicalMemoryBytes) * 0.55)
+            let supportedWorkingSetBudget = Int64(Double(physicalMemoryBytes) * 0.72)
+
+            if estimatedWorkingSet <= recommendedWorkingSetBudget {
+                return .recommended
+            }
+
+            if estimatedWorkingSet <= supportedWorkingSetBudget {
+                return .supported
+            }
+        }
 
         if fileSize <= recommendedModelBudgetBytes {
             return .recommended
@@ -1989,6 +1799,77 @@ struct DeviceCapabilityProfile {
         }
 
         return .tooLarge
+    }
+
+    func estimatedWorkingSetBytes(for file: GGUFInfo) -> Int64? {
+        guard let fileSize = file.size else { return nil }
+
+        let quantizationToken = file.quantization?.uppercased() ?? file.filename.uppercased()
+        let bytesPerWeight = approximateBytesPerWeight(for: quantizationToken)
+        let parameterCountB = inferredParameterCountB(from: file.filename)
+
+        let inferredWeightsBytes: Double
+        if let parameterCountB {
+            inferredWeightsBytes = parameterCountB * 1_000_000_000 * bytesPerWeight
+        } else {
+            inferredWeightsBytes = Double(fileSize)
+        }
+
+        let loadedWeightsBytes = max(Double(fileSize) * 1.15, inferredWeightsBytes * 1.08)
+        let runtimeOverheadBytes = min(max(loadedWeightsBytes * 0.18, 350_000_000), 1_800_000_000)
+        let kvCacheBytes: Double
+        if let parameterCountB {
+            kvCacheBytes = min(max(parameterCountB * 1_000_000_000 * 0.015, 120_000_000), 1_200_000_000)
+        } else {
+            kvCacheBytes = 350_000_000
+        }
+
+        return Int64(loadedWeightsBytes + runtimeOverheadBytes + kvCacheBytes)
+    }
+
+    private func inferredParameterCountB(from filename: String) -> Double? {
+        let lower = filename.lowercased()
+        let patterns = ["([0-9]+(?:\\.[0-9]+)?)b", "([0-9]+(?:\\.[0-9]+)?)m"]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+            guard let match = regex.firstMatch(in: lower, range: range),
+                  let valueRange = Range(match.range(at: 1), in: lower),
+                  let rawValue = Double(lower[valueRange]) else {
+                continue
+            }
+
+            if pattern.contains("m") {
+                return rawValue / 1_000.0
+            }
+            return rawValue
+        }
+
+        return nil
+    }
+
+    private func approximateBytesPerWeight(for quantization: String) -> Double {
+        switch quantization {
+        case let token where token.contains("Q2"):
+            return 0.35
+        case let token where token.contains("Q3"):
+            return 0.45
+        case let token where token.contains("Q4"):
+            return 0.60
+        case let token where token.contains("Q5"):
+            return 0.75
+        case let token where token.contains("Q6"):
+            return 0.90
+        case let token where token.contains("Q8"):
+            return 1.05
+        case let token where token.contains("F16") || token.contains("FP16"):
+            return 2.0
+        case let token where token.contains("F32") || token.contains("FP32"):
+            return 4.0
+        default:
+            return 1.0
+        }
     }
 }
 

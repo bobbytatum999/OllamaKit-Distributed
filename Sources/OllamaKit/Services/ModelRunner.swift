@@ -35,6 +35,7 @@ final class ModelRunner: ObservableObject {
     }
 
     func loadModel(catalogId: String, contextLength: Int = 4096, gpuLayers: Int? = nil) async throws {
+        let loadStart = CFAbsoluteTimeGetCurrent()
         if let snapshot = await ModelStorage.shared.snapshot(name: catalogId),
            snapshot.backendKind == .ggufLlama,
            !snapshot.isValidatedRunnable
@@ -57,15 +58,46 @@ final class ModelRunner: ObservableObject {
             flashAttentionEnabled: settings.flashAttentionEnabled,
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,
+            turboQuantMode: settings.turboQuantMode,
+            kvCacheTypeK: settings.kvCacheTypeK,
+            kvCacheTypeV: settings.kvCacheTypeV,
             keepModelInMemory: settings.keepModelInMemory,
             autoOffloadMinutes: settings.autoOffloadMinutes
         )
 
-        let entry = try await RuntimeCoordinator.shared.loadModel(
-            catalogId: catalogId,
-            runtime: runtime
-        )
-        await updateActiveState(from: entry)
+        do {
+            let entry = try await RuntimeCoordinator.shared.loadModel(
+                catalogId: catalogId,
+                runtime: runtime
+            )
+            await updateActiveState(from: entry)
+
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+            await MainActor.run {
+                ModelPerformanceStore.shared.record(
+                    ModelPerformanceSample(
+                        modelID: catalogId,
+                        phase: .load,
+                        elapsedMs: elapsedMs,
+                        wasSuccessful: true
+                    )
+                )
+            }
+        } catch {
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+            await MainActor.run {
+                ModelPerformanceStore.shared.record(
+                    ModelPerformanceSample(
+                        modelID: catalogId,
+                        phase: .load,
+                        elapsedMs: elapsedMs,
+                        wasSuccessful: false,
+                        notes: error.localizedDescription
+                    )
+                )
+            }
+            throw error
+        }
     }
 
     func validateModel(catalogId: String) async -> ModelSnapshot? {
@@ -91,32 +123,69 @@ final class ModelRunner: ObservableObject {
         guard let activeCatalogId else {
             throw ModelError.noModelLoaded
         }
+        let generationStart = CFAbsoluteTimeGetCurrent()
 
         let currentSnapshot = await MainActor.run {
             ModelStorage.shared.snapshot(name: activeCatalogId)
         }
+        let preferredContextLength = max(AppSettings.shared.defaultContextLength, 512)
+        let effectiveContextLength = max(
+            min(currentSnapshot?.runtimeContextLength ?? preferredContextLength, preferredContextLength),
+            512
+        )
         let runtime = RuntimePreferences.fromSettings(
             AppSettings.shared,
-            contextLength: currentSnapshot?.runtimeContextLength
+            contextLength: effectiveContextLength
         )
 
-        let result = try await RuntimeCoordinator.shared.generate(
-            request: InferenceRequest(
-                catalogId: activeCatalogId,
-                prompt: prompt,
-                systemPrompt: systemPrompt,
-                conversationTurns: conversationTurns,
-                tools: tools,
-                reasoning: reasoning,
-                parameters: parameters,
-                runtimePreferences: runtime
-            )
-        ) { chunk in
-            onToken(chunk.text)
+        let result: InferenceResult
+        do {
+            result = try await RuntimeCoordinator.shared.generate(
+                request: InferenceRequest(
+                    catalogId: activeCatalogId,
+                    prompt: prompt,
+                    systemPrompt: systemPrompt,
+                    conversationTurns: conversationTurns,
+                    tools: tools,
+                    reasoning: reasoning,
+                    parameters: parameters,
+                    runtimePreferences: runtime
+                )
+            ) { chunk in
+                onToken(chunk.text)
+            }
+        } catch {
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
+            await MainActor.run {
+                ModelPerformanceStore.shared.record(
+                    ModelPerformanceSample(
+                        modelID: activeCatalogId,
+                        phase: .generate,
+                        elapsedMs: elapsedMs,
+                        wasSuccessful: false,
+                        notes: error.localizedDescription
+                    )
+                )
+            }
+            throw error
         }
 
         let updatedEntry = try? await RuntimeCoordinator.shared.activeEntry(contextLength: runtime.contextLength)
         await updateActiveState(from: updatedEntry)
+
+        await MainActor.run {
+            ModelPerformanceStore.shared.record(
+                ModelPerformanceSample(
+                    modelID: activeCatalogId,
+                    phase: .generate,
+                    elapsedMs: result.generationTime * 1000,
+                    tokens: result.tokensGenerated,
+                    tokensPerSecond: result.generationTime > 0 ? Double(result.tokensGenerated) / result.generationTime : 0,
+                    wasSuccessful: !result.wasCancelled,
+                    notes: result.wasCancelled ? "cancelled" : nil
+                )
+            )
+        }
         return result
     }
 

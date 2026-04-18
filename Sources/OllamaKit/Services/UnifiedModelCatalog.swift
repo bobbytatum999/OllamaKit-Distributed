@@ -149,7 +149,7 @@ struct ModelSnapshot: Identifiable, Hashable, Sendable {
     var canBeSelectedForChat: Bool {
         switch backendKind {
         case .ggufLlama:
-            return fileExists && isValidatedRunnable
+            return fileExists && effectiveValidationStatus != .failed
         case .appleFoundation:
             return true
         case .coreMLPackage:
@@ -276,6 +276,9 @@ extension RuntimePreferences {
             flashAttentionEnabled: settings.flashAttentionEnabled,
             mmapEnabled: settings.mmapEnabled,
             mlockEnabled: settings.mlockEnabled,
+            turboQuantMode: settings.turboQuantMode,
+            kvCacheTypeK: settings.kvCacheTypeK,
+            kvCacheTypeV: settings.kvCacheTypeV,
             keepModelInMemory: settings.keepModelInMemory,
             autoOffloadMinutes: settings.autoOffloadMinutes
         )
@@ -324,7 +327,6 @@ final class ModelStorage: ObservableObject {
     func bootstrap() async {
         await migrateLegacyModelsIfNeeded()
         await refresh()
-        await validatePendingGGUFModels()
     }
 
     func refresh() async {
@@ -348,7 +350,6 @@ final class ModelStorage: ObservableObject {
                 contextLength: seed.contextLength,
                 serverCapabilities: seed.serverCapabilities
             )
-            _ = await validateModel(catalogId: entry.catalogId)
             await refresh()
         } catch {
             print("Failed to upsert downloaded model into registry: \(error)")
@@ -360,7 +361,6 @@ final class ModelStorage: ObservableObject {
             from: sourceURL,
             defaultContextLength: AppSettings.shared.defaultContextLength
         )
-        _ = await validateModel(catalogId: entry.catalogId)
         await refresh()
         return snapshot(name: entry.catalogId) ?? ModelSnapshot(entry: entry)
     }
