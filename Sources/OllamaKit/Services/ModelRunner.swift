@@ -205,23 +205,25 @@ final class ModelRunner: ObservableObject {
 
         let resolvedParameters = await MainActor.run { parameters ?? .appDefault }
 
-        let (snapshotContextLength, runtime) = await MainActor.run {
+        let (snapshotContextLength, runtime, preferredContextLength) = await MainActor.run {
             let snap = ModelStorage.shared.snapshot(name: activeCatalogId)
             let rt = RuntimePreferences.fromSettings(
                 AppSettings.shared,
                 contextLength: snap?.runtimeContextLength
             )
-            return (snap?.runtimeContextLength, rt)
+            let ctxLen = max(AppSettings.shared.defaultContextLength, 512)
+            return (snap?.runtimeContextLength, rt, ctxLen)
         }
-        let preferredContextLength = max(AppSettings.shared.defaultContextLength, 512)
         let effectiveContextLength = max(
             min(currentSnapshot?.runtimeContextLength ?? preferredContextLength, preferredContextLength),
             512
         )
-        let runtime = RuntimePreferences.fromSettings(
-            AppSettings.shared,
-            contextLength: effectiveContextLength
-        )
+        let runtime = await MainActor.run {
+            RuntimePreferences.fromSettings(
+                AppSettings.shared,
+                contextLength: effectiveContextLength
+            )
+        }
 
         let result: InferenceResult
         do {

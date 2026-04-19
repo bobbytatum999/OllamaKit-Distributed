@@ -1243,7 +1243,7 @@ class ChatViewModel: ObservableObject {
     @Published var generationStartTime: Date?
 
     func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters? = nil, imageData: [Data]? = nil) async {
-        let parameters = parameters ?? .appDefault
+        let parameters = if let parameters = parameters { parameters } else { await MainActor.run { ModelParameters.appDefault } }
         lastSentMessage = content
         guard let model = currentModel else {
             AppLogStore.shared.record(
@@ -1671,16 +1671,19 @@ struct ModelComparisonSheet: View {
         response1 = ""
         Task {
             do {
+                let (gpuLayers, parameters) = await MainActor.run {
+                    (AppSettings.shared.gpuLayers, ModelParameters.appDefault)
+                }
                 try await ModelRunner.shared.loadModel(
                     catalogId: model1.catalogId,
                     contextLength: model1.runtimeContextLength,
-                    gpuLayers: AppSettings.shared.gpuLayers
+                    gpuLayers: gpuLayers
                 )
                 let result = try await ModelRunner.shared.generate(
                     prompt: "",
                     systemPrompt: nil,
                     conversationTurns: [ConversationTurn(role: "user", content: prompt)],
-                    parameters: .appDefault
+                    parameters: parameters
                 ) { _ in }
                 await MainActor.run {
                     response1 = result.text
@@ -1699,16 +1702,19 @@ struct ModelComparisonSheet: View {
         response2 = ""
         Task {
             do {
+                let (gpuLayers, parameters) = await MainActor.run {
+                    (AppSettings.shared.gpuLayers, ModelParameters.appDefault)
+                }
                 try await ModelRunner.shared.loadModel(
                     catalogId: model2.catalogId,
                     contextLength: model2.runtimeContextLength,
-                    gpuLayers: AppSettings.shared.gpuLayers
+                    gpuLayers: gpuLayers
                 )
                 let result = try await ModelRunner.shared.generate(
                     prompt: "",
                     systemPrompt: nil,
                     conversationTurns: [ConversationTurn(role: "user", content: prompt)],
-                    parameters: .appDefault
+                    parameters: parameters
                 ) { _ in }
                 await MainActor.run {
                     response2 = result.text
