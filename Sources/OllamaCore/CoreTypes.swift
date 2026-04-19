@@ -908,6 +908,7 @@ public struct RuntimePreferences: Hashable, Sendable {
         case disabled
         case googleTurboQuantBalanced
         case googleTurboQuantAggressive
+    }
 
     public enum KVCachePreset: String, CaseIterable, Sendable {
         case platformDefault
