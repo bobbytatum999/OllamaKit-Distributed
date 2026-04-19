@@ -36,16 +36,6 @@ final class ModelRunner: ObservableObject {
 
     func loadModel(catalogId: String, contextLength: Int = 4096, gpuLayers: Int? = nil) async throws {
         let loadStart = CFAbsoluteTimeGetCurrent()
-        if let snapshot = await ModelStorage.shared.snapshot(name: catalogId),
-           snapshot.backendKind == .ggufLlama,
-           !snapshot.isValidatedRunnable
-        {
-            let refreshedSnapshot = await ModelStorage.shared.validateModel(catalogId: snapshot.catalogId) ?? snapshot
-            guard refreshedSnapshot.isValidatedRunnable else {
-                throw ModelError.backendUnavailable(
-                    refreshedSnapshot.validationSummary
-                        ?? "This GGUF model failed validation on this device and cannot be loaded for chat."
-                )
         let resolvedGpuLayers = await MainActor.run { gpuLayers ?? AppSettings.shared.gpuLayers }
         let resolvedKvCachePreset = await MainActor.run { AppSettings.shared.kvCachePreset.rawValue }
         await MainActor.run {
@@ -133,33 +123,6 @@ final class ModelRunner: ObservableObject {
                 )
             }
             throw error
-            gpuLayers: settings_gpuLayers,
-            threads: settings_threads,
-            batchSize: settings_batchSize,
-            kvCachePreset: settings_kvCachePreset,
-            flashAttentionEnabled: settings_flashAttention,
-            mmapEnabled: settings_mmap,
-            mlockEnabled: settings_mlock,
-            keepModelInMemory: settings_keepInMemory,
-            autoOffloadMinutes: settings_autoOffload
-        )
-
-        let entry = try await RuntimeCoordinator.shared.loadModel(
-            catalogId: catalogId,
-            runtime: runtime
-        )
-        await updateActiveState(from: entry)
-        let resolvedPath = entry.localPath ?? ""
-        await MainActor.run {
-            AppLogStore.shared.record(
-                .model,
-                title: "Load Completed",
-                message: "Model loaded successfully.",
-                metadata: [
-                    "catalog_id": catalogId,
-                    "resolved_path": resolvedPath
-                ]
-            )
         }
     }
 
@@ -255,20 +218,6 @@ final class ModelRunner: ObservableObject {
                 )
             }
             throw error
-
-        let result = try await RuntimeCoordinator.shared.generate(
-            request: InferenceRequest(
-                catalogId: activeCatalogId,
-                prompt: prompt,
-                systemPrompt: systemPrompt,
-                conversationTurns: conversationTurns,
-                tools: tools,
-                reasoning: reasoning,
-                parameters: resolvedParameters,
-                runtimePreferences: runtime
-            )
-        ) { chunk in
-            onToken(chunk.text)
         }
 
         let updatedEntry = try? await RuntimeCoordinator.shared.activeEntry(contextLength: runtime.contextLength)
@@ -284,7 +233,8 @@ final class ModelRunner: ObservableObject {
                     tokensPerSecond: result.generationTime > 0 ? Double(result.tokensGenerated) / result.generationTime : 0,
                     wasSuccessful: !result.wasCancelled,
                     notes: result.wasCancelled ? "cancelled" : nil
-                )
+                ))
+        }
         await MainActor.run {
             AppLogStore.shared.record(
                 .model,
