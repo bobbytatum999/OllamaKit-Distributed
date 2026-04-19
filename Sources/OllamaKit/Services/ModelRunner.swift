@@ -69,26 +69,27 @@ final class ModelRunner: ObservableObject {
 
         let (settings_gpuLayers, settings_threads, settings_batchSize, settings_kvCachePreset,
              settings_flashAttention, settings_mmap, settings_mlock, settings_keepInMemory,
-             settings_autoOffload) = await MainActor.run {
+             settings_autoOffload, settings_turboQuant, settings_kvCacheTypeK, settings_kvCacheTypeV) = await MainActor.run {
             let s = AppSettings.shared
             return (gpuLayers ?? s.gpuLayers, s.threads, s.batchSize, s.kvCachePreset,
                     s.flashAttentionEnabled, s.mmapEnabled, s.mlockEnabled,
-                    s.keepModelInMemory, s.autoOffloadMinutes)
+                    s.keepModelInMemory, s.autoOffloadMinutes, s.turboQuantMode,
+                    s.kvCacheTypeK, s.kvCacheTypeV)
         }
 
         let runtime = RuntimePreferences(
             contextLength: max(contextLength, 512),
-            gpuLayers: gpuLayers ?? settings.gpuLayers,
-            threads: settings.threads,
-            batchSize: settings.batchSize,
-            flashAttentionEnabled: settings.flashAttentionEnabled,
-            mmapEnabled: settings.mmapEnabled,
-            mlockEnabled: settings.mlockEnabled,
-            turboQuantMode: settings.turboQuantMode,
-            kvCacheTypeK: settings.kvCacheTypeK,
-            kvCacheTypeV: settings.kvCacheTypeV,
-            keepModelInMemory: settings.keepModelInMemory,
-            autoOffloadMinutes: settings.autoOffloadMinutes
+            gpuLayers: settings_gpuLayers,
+            threads: settings_threads,
+            batchSize: settings_batchSize,
+            flashAttentionEnabled: settings_flashAttention,
+            mmapEnabled: settings_mmap,
+            mlockEnabled: settings_mlock,
+            turboQuantMode: settings_turboQuant,
+            kvCacheTypeK: settings_kvCacheTypeK,
+            kvCacheTypeV: settings_kvCacheTypeV,
+            keepModelInMemory: settings_keepInMemory,
+            autoOffloadMinutes: settings_autoOffload
         )
 
         do {
@@ -178,10 +179,10 @@ final class ModelRunner: ObservableObject {
             return (snap?.runtimeContextLength, rt, ctxLen)
         }
         let effectiveContextLength = max(
-            min(currentSnapshot?.runtimeContextLength ?? preferredContextLength, preferredContextLength),
+            min(snapshotContextLength ?? preferredContextLength, preferredContextLength),
             512
         )
-        let runtime = await MainActor.run {
+        let generationRuntime = await MainActor.run {
             RuntimePreferences.fromSettings(
                 AppSettings.shared,
                 contextLength: effectiveContextLength
@@ -198,8 +199,8 @@ final class ModelRunner: ObservableObject {
                     conversationTurns: conversationTurns,
                     tools: tools,
                     reasoning: reasoning,
-                    parameters: parameters,
-                    runtimePreferences: runtime
+                    parameters: resolvedParameters,
+                    runtimePreferences: generationRuntime
                 )
             ) { chunk in
                 onToken(chunk.text)
@@ -220,7 +221,7 @@ final class ModelRunner: ObservableObject {
             throw error
         }
 
-        let updatedEntry = try? await RuntimeCoordinator.shared.activeEntry(contextLength: runtime.contextLength)
+        let updatedEntry = try? await RuntimeCoordinator.shared.activeEntry(contextLength: generationRuntime.contextLength)
         await updateActiveState(from: updatedEntry)
 
         await MainActor.run {
