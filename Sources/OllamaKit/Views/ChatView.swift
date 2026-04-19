@@ -4,8 +4,6 @@ import OllamaCore
 import AVFoundation
 import Speech
 import PhotosUI
-import Speech
-import AVFoundation
 
 struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
@@ -1676,8 +1674,11 @@ struct ModelComparisonSheet: View {
         response1 = ""
         Task {
             do {
-                let (gpuLayers, actualParameters) = await MainActor.run {
-                    (AppSettings.shared.gpuLayers, ModelParameters.appDefault)
+                let actualParameters = await MainActor.run {
+                    ModelParameters.appDefault
+                }
+                let gpuLayers = await MainActor.run {
+                    AppSettings.shared.gpuLayers
                 }
                 try await ModelRunner.shared.loadModel(
                     catalogId: model1.catalogId,
@@ -1707,8 +1708,11 @@ struct ModelComparisonSheet: View {
         response2 = ""
         Task {
             do {
-                let (gpuLayers, actualParameters) = await MainActor.run {
-                    (AppSettings.shared.gpuLayers, ModelParameters.appDefault)
+                let actualParameters = await MainActor.run {
+                    ModelParameters.appDefault
+                }
+                let gpuLayers = await MainActor.run {
+                    AppSettings.shared.gpuLayers
                 }
                 try await ModelRunner.shared.loadModel(
                     catalogId: model2.catalogId,
