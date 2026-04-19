@@ -1248,7 +1248,7 @@ class ChatViewModel: ObservableObject {
     @Published var generationStartTime: Date?
 
     func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters? = nil, imageData: [Data]? = nil) async {
-        let parameters = if let parameters = parameters { parameters } else { await MainActor.run { ModelParameters.appDefault } }
+        let actualParameters = if let parameters = parameters { parameters } else { await MainActor.run { ModelParameters.appDefault } }
         lastSentMessage = content
         guard let model = currentModel else {
             AppLogStore.shared.record(
@@ -1356,7 +1356,7 @@ class ChatViewModel: ObservableObject {
                 prompt: "",
                 systemPrompt: session.systemPrompt,
                 conversationTurns: conversationTurns + [userTurn],
-                parameters: parameters
+                parameters: actualParameters
             ) { token in
                 guard shouldStreamInUI else { return }
                 // Thread-safe accumulation: lock protects the read-modify-write of
@@ -1676,7 +1676,7 @@ struct ModelComparisonSheet: View {
         response1 = ""
         Task {
             do {
-                let (gpuLayers, parameters) = await MainActor.run {
+                let (gpuLayers, actualParameters) = await MainActor.run {
                     (AppSettings.shared.gpuLayers, ModelParameters.appDefault)
                 }
                 try await ModelRunner.shared.loadModel(
@@ -1688,7 +1688,7 @@ struct ModelComparisonSheet: View {
                     prompt: "",
                     systemPrompt: nil,
                     conversationTurns: [ConversationTurn(role: "user", content: prompt)],
-                    parameters: parameters
+                    parameters: actualParameters
                 ) { _ in }
                 await MainActor.run {
                     response1 = result.text
@@ -1707,7 +1707,7 @@ struct ModelComparisonSheet: View {
         response2 = ""
         Task {
             do {
-                let (gpuLayers, parameters) = await MainActor.run {
+                let (gpuLayers, actualParameters) = await MainActor.run {
                     (AppSettings.shared.gpuLayers, ModelParameters.appDefault)
                 }
                 try await ModelRunner.shared.loadModel(
@@ -1719,7 +1719,7 @@ struct ModelComparisonSheet: View {
                     prompt: "",
                     systemPrompt: nil,
                     conversationTurns: [ConversationTurn(role: "user", content: prompt)],
-                    parameters: parameters
+                    parameters: actualParameters
                 ) { _ in }
                 await MainActor.run {
                     response2 = result.text
