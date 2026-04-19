@@ -734,6 +734,11 @@ final class VoiceInputController: NSObject, ObservableObject {
                 Task { @MainActor in
                     self.stopRecording()
                     self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
 // MARK: - Body Helper Computed Properties
 
     private var messagesList: some View {
