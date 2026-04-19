@@ -1794,4 +1794,3 @@ private struct MessagesListView: View {
         }
     }
 }
-}

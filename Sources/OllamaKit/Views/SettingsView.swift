@@ -513,6 +513,7 @@ struct MemorySettingsSection: View {
         }
     }
 }
+}
 
 struct HuggingFaceSettingsSection: View {
     @ObservedObject var settings: AppSettings
@@ -1007,6 +1008,9 @@ struct BenchmarkSection: View {
             status = "Benchmark failed."
             errorLine = error.localizedDescription
         }
+    }
+}
+
 struct AppActivityLogsSection: View {
     @ObservedObject private var logStore = AppLogStore.shared
     @State private var liveUpdates = true

@@ -29,6 +29,8 @@ final class ThermalMonitorService: ObservableObject {
 
     var isElevated: Bool {
         thermalState == .serious || thermalState == .critical
+    }
+
     /// Estimated temperature range for each thermal state, in Celsius.
     /// Based on documented iOS thermal management behavior.
     private static let estimatedCelsiusRanges: [ProcessInfo.ThermalState: ClosedRange<Double>] = [
