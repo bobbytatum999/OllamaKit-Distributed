@@ -841,8 +841,8 @@ private struct MessagesListView: View {
         }
     }
 }
-}
 
+@MainActor
 final class VoiceInputController: NSObject, ObservableObject {
     @Published var isRecording = false
     @Published var isAvailable = true
@@ -1621,5 +1621,4 @@ struct ChatView: View {
         }
     }
 }
-
-@MainActor
+}
