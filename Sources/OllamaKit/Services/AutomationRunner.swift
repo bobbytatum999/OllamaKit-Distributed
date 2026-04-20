@@ -26,6 +26,14 @@ actor AutomationRunner {
 
     private init() {}
 
+    func planAutomation(prompt: String, systemPrompt: String) async throws -> String {
+        try await generateLLMResponse(
+            prompt: prompt,
+            systemPrompt: systemPrompt,
+            requestedModelID: nil
+        )
+    }
+
     func run(_ automation: SavedAutomation) async throws -> String {
         guard let steps = try? JSONDecoder().decode([AutomationStep].self, from: Data(automation.stepsJSON.utf8)) else {
             return "Failed to parse steps"
@@ -59,59 +67,15 @@ actor AutomationRunner {
     }
 
     private func runLLMStep(_ step: AutomationStep, context: [String: String]) async throws -> String {
-        let serverSettings = await MainActor.run { () -> (enabled: Bool, url: String, port: Int) in
-            let settings = AppSettings.shared
-            return (settings.serverEnabled, settings.localServerURL, settings.serverPort)
-        }
+        let prompt = interpolate(step.params["prompt"] ?? "", context: context)
+        let systemPrompt = interpolateOptional(step.params["system"], context: context)
+        let requestedModelID = step.params["model"]?.trimmedForLookup.nonEmpty
 
-        guard serverSettings.enabled else {
-            throw AutomationError.serverNotEnabled
-        }
-
-        // Get active model
-        guard let tagsURL = URL(string: "\(serverSettings.url)/api/tags") else {
-            throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
-        }
-        let (tagsData, tagsResponse) = try await URLSession.shared.data(from: tagsURL)
-        guard (tagsResponse as? HTTPURLResponse)?.statusCode == 200 else {
-            throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
-        }
-        let tagsResult = try JSONDecoder().decode([String: AnyAutomationCodable].self, from: tagsData)
-        
-        let modelsWrapper = tagsResult["models"]?.value as? [[String: AnyAutomationCodable]]
-        guard let models = modelsWrapper,
-              let firstModel = models.first,
-              let modelName = firstModel["name"]?.value as? String else {
-            throw AutomationError.modelNotFound
-        }
-
-        // Interpolate context into prompt
-        var prompt = step.params["prompt"] ?? ""
-        for (key, value) in context {
-            prompt = prompt.replacingOccurrences(of: "{{\(key)}}", with: value)
-        }
-
-        let body: [String: Any] = [
-            "model": modelName,
-            "messages": [["role": "user", "content": prompt]],
-            "stream": false
-        ]
-
-        guard let chatURL = URL(string: "\(serverSettings.url)/api/chat") else {
-            throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
-        }
-        var request = URLRequest(url: chatURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, chatResponse) = try await URLSession.shared.data(for: request)
-        guard (chatResponse as? HTTPURLResponse)?.statusCode == 200 else {
-            throw AutomationError.connectionFailed(host: "localhost", port: serverSettings.port)
-        }
-        let response = try JSONDecoder().decode([String: AnyAutomationCodable].self, from: data)
-        let messageDict = response["message"]?.value as? [String: AnyAutomationCodable]
-        return messageDict?["content"]?.value as? String ?? "No response"
+        return try await generateLLMResponse(
+            prompt: prompt,
+            systemPrompt: systemPrompt,
+            requestedModelID: requestedModelID
+        )
     }
 
     private func runHTTPStep(_ step: AutomationStep, context: [String: String]) async throws -> String {
@@ -154,5 +118,87 @@ actor AutomationRunner {
         try await center.add(request)
 
         return "Notification sent"
+    }
+
+    private func generateLLMResponse(
+        prompt: String,
+        systemPrompt: String?,
+        requestedModelID: String?
+    ) async throws -> String {
+        let targetModel = try await resolveModel(preferredModelID: requestedModelID)
+
+        if ModelRunner.shared.activeCatalogId != targetModel.catalogId {
+            try await ModelRunner.shared.loadModel(
+                catalogId: targetModel.catalogId,
+                contextLength: targetModel.runtimeContextLength
+            )
+        }
+
+        var responseText = ""
+        var parameters = await MainActor.run { SamplingParameters.appDefault }
+        parameters.maxTokens = max(parameters.maxTokens, 1024)
+
+        _ = try await ModelRunner.shared.generate(
+            prompt: prompt,
+            systemPrompt: systemPrompt,
+            parameters: parameters
+        ) { token in
+            responseText += token
+        }
+
+        let trimmed = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "No response" : trimmed
+    }
+
+    private func resolveModel(preferredModelID: String?) async throws -> ModelSnapshot {
+        var selection = await MainActor.run {
+            BuiltInModelCatalog.selectionModels(downloadedModels: ModelStorage.shared.selectionSnapshots)
+        }
+
+        if selection.isEmpty {
+            await ModelStorage.shared.refresh()
+            selection = await MainActor.run {
+                BuiltInModelCatalog.selectionModels(downloadedModels: ModelStorage.shared.selectionSnapshots)
+            }
+        }
+
+        if let preferredModelID = preferredModelID?.trimmedForLookup.nonEmpty,
+           let model = ModelSnapshot.resolveStoredReference(preferredModelID, in: selection) {
+            return model
+        }
+
+        if let activeCatalogId = ModelRunner.shared.activeCatalogId,
+           let model = ModelSnapshot.resolveStoredReference(activeCatalogId, in: selection) {
+            return model
+        }
+
+        if let defaultModelID = await MainActor.run({ AppSettings.shared.defaultModelId.nonEmpty }),
+           let model = ModelSnapshot.resolveStoredReference(defaultModelID, in: selection) {
+            return model
+        }
+
+        if let installedModel = selection.first(where: { !$0.isBuiltInAppleModel }) {
+            return installedModel
+        }
+
+        if let fallbackModel = selection.first {
+            return fallbackModel
+        }
+
+        throw AutomationError.modelNotFound
+    }
+
+    private func interpolate(_ template: String, context: [String: String]) -> String {
+        var result = template
+        for (key, value) in context {
+            result = result.replacingOccurrences(of: "{{\(key)}}", with: value)
+        }
+        return result
+    }
+
+    private func interpolateOptional(_ template: String?, context: [String: String]) -> String? {
+        guard let template else { return nil }
+        let interpolated = interpolate(template, context: context)
+        return interpolated.trimmedForLookup.isEmpty ? nil : interpolated
     }
 }

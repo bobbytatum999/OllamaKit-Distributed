@@ -2,56 +2,6 @@ import SwiftUI
 import SwiftData
 import OllamaCore
 
-// Rename to avoid conflict with project-level or other symbols
-public struct AnyAutomationCodable: Codable {
-    public let value: Any
-    
-    public init(_ value: Any) {
-        self.value = value
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        
-        if let bool = try? container.decode(Bool.self) {
-            value = bool
-        } else if let int = try? container.decode(Int.self) {
-            value = int
-        } else if let double = try? container.decode(Double.self) {
-            value = double
-        } else if let string = try? container.decode(String.self) {
-            value = string
-        } else if let array = try? container.decode([AnyAutomationCodable].self) {
-            value = array.map { $0.value }
-        } else if let dictionary = try? container.decode([String: AnyAutomationCodable].self) {
-            value = dictionary.mapValues { $0.value }
-        } else {
-            value = NSNull()
-        }
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        
-        switch value {
-        case let bool as Bool:
-            try container.encode(bool)
-        case let int as Int:
-            try container.encode(int)
-        case let double as Double:
-            try container.encode(double)
-        case let string as String:
-            try container.encode(string)
-        case let array as [Any]:
-            try container.encode(array.map { AnyAutomationCodable($0) })
-        case let dictionary as [String: Any]:
-            try container.encode(dictionary.mapValues { AnyAutomationCodable($0) })
-        default:
-            try container.encodeNil()
-        }
-    }
-}
-
 struct CreateAutomationView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -205,34 +155,10 @@ struct CreateAutomationView: View {
         errorMessage = nil
 
         do {
-            let body: [String: Any] = [
-                "model": "llama3.2",
-                "messages": [
-                    ["role": "system", "content": systemPrompt],
-                    ["role": "user", "content": prompt]
-                ],
-                "stream": false
-            ]
-
-            guard let url = URL(string: "\(AppSettings.shared.localServerURL)/api/chat") else {
-                errorMessage = "Invalid server URL"
-                showingError = true
-                isGenerating = false
-                return
-            }
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            request.timeoutInterval = 30
-
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let response = try JSONDecoder().decode([String: AnyAutomationCodable].self, from: data)
-            
-            // Access the dictionary value inside AnyAutomationCodable before casting
-            let messageWrapper = response["message"]
-            let messageDict = messageWrapper?.value as? [String: AnyAutomationCodable]
-            let content = messageDict?["content"]?.value as? String ?? ""
+            let content = try await AutomationRunner.shared.planAutomation(
+                prompt: prompt,
+                systemPrompt: systemPrompt
+            )
 
             // Clean the response - strip markdown code blocks if present
             var jsonString = content.trimmingCharacters(in: .whitespacesAndNewlines)

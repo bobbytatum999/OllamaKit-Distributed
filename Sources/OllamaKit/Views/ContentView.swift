@@ -50,7 +50,7 @@ struct ContentView: View {
             .tabItem {
                 Label("Settings", systemImage: "gear")
             }
-            .tag(3)
+            .tag(4)
         }
         .tint(Color.accentColor)
         .preferredColorScheme(settings.darkMode ? .dark : .light)
@@ -67,7 +67,8 @@ struct ContentView: View {
             case 0: tabName = "Chat"
             case 1: tabName = "Models"
             case 2: tabName = "Server"
-            case 3: tabName = "Settings"
+            case 3: tabName = "Automate"
+            case 4: tabName = "Settings"
             default: tabName = "Unknown"
             }
 
