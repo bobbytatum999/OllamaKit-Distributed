@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 import OllamaKit
+import OllamaCore
 
 // NO_REPLY (this is just a marker for me to find where to remove the old AnyCodable definition)
 
@@ -151,38 +152,39 @@ actor AutomationRunner {
     }
 
     private func resolveModel(preferredModelID: String?) async throws -> ModelSnapshot {
-        var selection = await MainActor.run {
+        let initialSelection = await MainActor.run {
             BuiltInModelCatalog.selectionModels(downloadedModels: ModelStorage.shared.selectionSnapshots)
         }
 
-        if selection.isEmpty {
+        if initialSelection.isEmpty {
             await ModelStorage.shared.refresh()
-            selection = await MainActor.run {
-                BuiltInModelCatalog.selectionModels(downloadedModels: ModelStorage.shared.selectionSnapshots)
+        }
+
+        if let resolvedModel = await MainActor.run(body: {
+            let selection = BuiltInModelCatalog.selectionModels(downloadedModels: ModelStorage.shared.selectionSnapshots)
+
+            if let preferredModelID = preferredModelID?.trimmedForLookup.nonEmpty,
+               let model = ModelSnapshot.resolveStoredReference(preferredModelID, in: selection) {
+                return model
             }
-        }
 
-        if let preferredModelID = preferredModelID?.trimmedForLookup.nonEmpty,
-           let model = ModelSnapshot.resolveStoredReference(preferredModelID, in: selection) {
-            return model
-        }
+            if let activeCatalogId = ModelRunner.shared.activeCatalogId,
+               let model = ModelSnapshot.resolveStoredReference(activeCatalogId, in: selection) {
+                return model
+            }
 
-        if let activeCatalogId = ModelRunner.shared.activeCatalogId,
-           let model = ModelSnapshot.resolveStoredReference(activeCatalogId, in: selection) {
-            return model
-        }
+            if let defaultModelID = AppSettings.shared.defaultModelId.nonEmpty,
+               let model = ModelSnapshot.resolveStoredReference(defaultModelID, in: selection) {
+                return model
+            }
 
-        if let defaultModelID = await MainActor.run({ AppSettings.shared.defaultModelId.nonEmpty }),
-           let model = ModelSnapshot.resolveStoredReference(defaultModelID, in: selection) {
-            return model
-        }
+            if let installedModel = selection.first(where: { !$0.isBuiltInAppleModel }) {
+                return installedModel
+            }
 
-        if let installedModel = selection.first(where: { !$0.isBuiltInAppleModel }) {
-            return installedModel
-        }
-
-        if let fallbackModel = selection.first {
-            return fallbackModel
+            return selection.first
+        }) {
+            return resolvedModel
         }
 
         throw AutomationError.modelNotFound
