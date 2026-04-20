@@ -1,8 +1,5 @@
 import Combine
 import Foundation
-
-import Foundation
-import Combine
 import OllamaCore
 
 /// Continuously monitors device thermal state and provides estimated temperatures.
@@ -44,9 +41,6 @@ final class ThermalMonitorService: ObservableObject {
     private static func toFahrenheit(_ celsius: Double) -> Double {
         celsius * 9.0 / 5.0 + 32.0
     }
-
-    /// Current thermal state.
-    @Published private(set) var thermalState: ProcessInfo.ThermalState = .nominal
 
     /// Estimated temperature at current state (midpoint of range), in Celsius.
     @Published private(set) var temperatureCelsius: Double = 30.0

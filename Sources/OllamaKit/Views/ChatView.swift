@@ -382,7 +382,7 @@ struct ChatView: View {
             message: "User submitted a chat message.",
             metadata: [
                 "chars": String(content.count),
-                "has_system_prompt": String(!(session.systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true))
+                "has_system_prompt": String(!session.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             ]
         )
 
@@ -734,231 +734,6 @@ final class VoiceInputController: NSObject, ObservableObject {
         }
     }
 
-// MARK: - Body Helper Computed Properties
-
-    private var messagesList: some View {
-        MessagesListView(
-            session: session,
-            isGenerating: viewModel.isGenerating,
-            tokensPerSecond: viewModel.tokensPerSecond,
-            streamRevision: viewModel.streamRevision,
-            onBranch: branchFromHere,
-            bottomID: bottomID
-        )
-    }
-
-    @ViewBuilder
-    private var chatInputArea: some View {
-        VStack(spacing: 0) {
-            Divider()
-            
-            // Image thumbnails strip
-            if !selectedImages.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
-                            ZStack(alignment: .topTrailing) {
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 60, height: 60)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                Button {
-                                    selectedImages.remove(at: index)
-                                    if index < selectedPhotoItems.count {
-                                        selectedPhotoItems.remove(at: index)
-                                    }
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 18))
-                                        .foregroundStyle(.white)
-                                        .background(Circle().fill(.black.opacity(0.5)))
-                                }
-                                .offset(x: 4, y: -4)
-                            }
-                        }
-                        
-                        PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 4, matching: .images) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(.ultraThinMaterial)
-                                    .frame(width: 60, height: 60)
-                                Image(systemName: "plus")
-                                    .font(.system(size: 20))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .padding(.vertical, 8)
-            }
-            
-            HStack(spacing: 12) {
-                Button(action: { showingModelSelector = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "cube.fill")
-                            .font(.system(size: 12))
-                        Text(viewModel.currentModel?.displayName ?? "Select Model")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(.ultraThinMaterial))
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isGenerating)
-                
-                Spacer()
-                
-                if viewModel.isGenerating {
-                    Button(action: { viewModel.stopGeneration() }) {
-                        Image(systemName: "stop.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-
-            HStack(spacing: 8) {
-                PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 4, matching: .images) {
-                    Image(systemName: selectedImages.isEmpty ? "photo" : "photo.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(selectedImages.isEmpty ? Color.secondary : Color.accentColor)
-                }
-                .onChange(of: selectedPhotoItems) { _, newItems in
-                    Task {
-                        var newImages: [UIImage] = []
-                        for item in newItems {
-                            if let data = try? await item.loadTransferable(type: Data.self),
-                               let image = UIImage(data: data) {
-                                newImages.append(image)
-                            }
-                        }
-                        for img in newImages {
-                            if !selectedImages.contains(where: { $0.pngData() == img.pngData() }) {
-                                selectedImages.append(img)
-                            }
-                        }
-                    }
-                }
-                
-                TextField("Message", text: $messageText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 16))
-                    .lineLimit(1...5)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                            )
-                    )
-                
-                Button(action: sendMessage) {
-                    Image(systemName: trimmedMessageText.isEmpty ? "waveform" : "arrow.up.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(trimmedMessageText.isEmpty ? Color.secondary : Color.accentColor)
-                }
-                .disabled((trimmedMessageText.isEmpty && selectedImages.isEmpty) || viewModel.isGenerating)
-
-                Button(action: toggleRecording) {
-                    Image(systemName: isRecording ? "mic.slash.fill" : "mic.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(isRecording ? Color.red : Color.secondary)
-                }
-                .disabled(viewModel.isGenerating)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-        }
-        .background(.ultraThinMaterial)
-    }
-
-    @ToolbarContentBuilder
-    private var chatToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            HStack(spacing: 16) {
-                Button { showingParameters = true } label: {
-                    Image(systemName: "slider.horizontal.3")
-                }
-                
-                Menu {
-                    Button { pendingTitle = session.title; showingRenameDialog = true } label: {
-                        Label("Rename", systemImage: "pencil")
-                    }
-                    Button { exportChat() } label: {
-                        Label("Export as Markdown", systemImage: "square.and.arrow.up")
-                    }
-                    Button { showingCompareSheet = true } label: {
-                        Label("Compare Models", systemImage: "rectangle.split.2x1")
-                    }
-                    Button { clearMessages() } label: {
-                        Label("Clear Messages", systemImage: "trash")
-                    }
-                    .disabled(viewModel.isGenerating)
-                    Button(role: .destructive) { deleteChat() } label: {
-                        Label("Delete Chat", systemImage: "trash")
-                    }
-                    .disabled(viewModel.isGenerating)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-            }
-        }
-    }
-}
-
-    @ViewBuilder
-    private var parametersFormContent: some View {
-        Form {
-            Section("Generation Parameters") {
-                VStack(alignment: .leading) {
-                    Text("Temperature: \(paramTemperature, specifier: "%.2f")")
-                    Slider(value: $paramTemperature, in: 0...2)
-                }
-                VStack(alignment: .leading) {
-                    Text("Top P: \(paramTopP, specifier: "%.2f")")
-                    Slider(value: $paramTopP, in: 0...1)
-                }
-                VStack(alignment: .leading) {
-                    Text("Top K: \(paramTopK)")
-                    Stepper("\(paramTopK)", value: $paramTopK, in: 1...100)
-                }
-                VStack(alignment: .leading) {
-                    Text("Repeat Penalty: \(paramRepeatPenalty, specifier: "%.2f")")
-                    Slider(value: $paramRepeatPenalty, in: 0...2)
-                }
-                VStack(alignment: .leading) {
-                    Text("Max Tokens: \(paramMaxTokens)")
-                    Stepper("\(paramMaxTokens)", value: $paramMaxTokens, in: 64...8192, step: 64)
-                }
-            }
-        }
-        .navigationTitle("Parameters")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") { showingParameters = false }
-            }
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Reset") {
-                    paramTemperature = 0.7
-                    paramTopP = 0.9
-                    paramTopK = 40
-                    paramRepeatPenalty = 1.1
-                    paramMaxTokens = 2048
-                }
-            }
-        }
-        .presentationDetents([.medium])
-    }
-
 struct MessageBubble: View {
     let message: ChatMessage
     let onBranch: ((ChatMessage) -> Void)?
@@ -1254,7 +1029,7 @@ class ChatViewModel: ObservableObject {
             )
             errorMessage = "No runnable model is selected. Pick another validated model or re-download the missing one."
             AppLogStore.shared.record(
-                .error,
+                .app,
                 level: .warning,
                 title: "Chat Send Blocked",
                 message: "No runnable model selected."
@@ -1448,7 +1223,7 @@ class ChatViewModel: ObservableObject {
             assistantMessage.content = "Error: \(error.localizedDescription)"
             assistantMessage.isGenerating = false
             AppLogStore.shared.record(
-                .error,
+                .app,
                 level: .error,
                 title: "Generation Failed",
                 message: error.localizedDescription,

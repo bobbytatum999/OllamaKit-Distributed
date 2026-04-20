@@ -151,15 +151,17 @@ struct AppLogEntry: Identifiable, Hashable, Codable, Sendable {
     let title: String
     let message: String
     let metadata: [String: String]
+    let body: String?
 
     init(
         id: UUID = UUID(),
         timestamp: Date = .now,
-        level: AppLogLevel,
+        level: AppLogLevel = .info,
         category: AppLogCategory,
         title: String,
         message: String,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
+        body: String? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -168,6 +170,7 @@ struct AppLogEntry: Identifiable, Hashable, Codable, Sendable {
         self.title = title
         self.message = message
         self.metadata = metadata
+        self.body = body?.nonEmpty
     }
 }
 
@@ -376,6 +379,66 @@ final class AppLogStore: ObservableObject {
             metadata: PersistentLogRedactor.redact(metadata: entry.metadata),
             body: PersistentLogRedactor.redact(entry.body)
         )
+    }
+}
+
+enum ModelPerformancePhase: String, Codable, CaseIterable, Sendable {
+    case load
+    case generate
+}
+
+struct ModelPerformanceSample: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    let timestamp: Date
+    let modelID: String
+    let phase: ModelPerformancePhase
+    let elapsedMs: Double
+    let tokens: Int?
+    let tokensPerSecond: Double?
+    let wasSuccessful: Bool
+    let notes: String?
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = .now,
+        modelID: String,
+        phase: ModelPerformancePhase,
+        elapsedMs: Double,
+        tokens: Int? = nil,
+        tokensPerSecond: Double? = nil,
+        wasSuccessful: Bool,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.modelID = modelID
+        self.phase = phase
+        self.elapsedMs = elapsedMs
+        self.tokens = tokens
+        self.tokensPerSecond = tokensPerSecond
+        self.wasSuccessful = wasSuccessful
+        self.notes = notes?.nonEmpty
+    }
+}
+
+@MainActor
+final class ModelPerformanceStore: ObservableObject {
+    static let shared = ModelPerformanceStore()
+
+    @Published private(set) var entries: [ModelPerformanceSample] = []
+
+    private init() {}
+
+    func record(_ sample: ModelPerformanceSample) {
+        entries.append(sample)
+        let overflow = entries.count - 200
+        if overflow > 0 {
+            entries.removeFirst(overflow)
+        }
+    }
+
+    func clear() {
+        entries.removeAll()
     }
 }
 
