@@ -12,18 +12,6 @@ final class ThermalMonitorService: ObservableObject {
 
     @Published private(set) var thermalState: ProcessInfo.ThermalState
 
-    private init(processInfo: ProcessInfo = .processInfo, notificationCenter: NotificationCenter = .default) {
-        thermalState = processInfo.thermalState
-
-        notificationCenter.addObserver(
-            forName: ProcessInfo.thermalStateDidChangeNotification,
-            object: processInfo,
-            queue: .main
-        ) { [weak self] _ in
-            self?.thermalState = processInfo.thermalState
-        }
-    }
-
     var isElevated: Bool {
         thermalState == .serious || thermalState == .critical
     }
@@ -76,13 +64,19 @@ final class ThermalMonitorService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
-        // Restore saved preference
+        let initialState = ProcessInfo.processInfo.thermalState
+        let presentation = Self.presentation(for: initialState)
+
+        thermalState = initialState
+        temperatureCelsius = presentation.temperatureCelsius
+        temperatureFahrenheit = presentation.temperatureFahrenheit
+        temperatureRangeCelsius = presentation.rangeCelsius
+        temperatureRangeFahrenheit = presentation.rangeFahrenheit
+        statusLabel = presentation.statusLabel
+        severityColor = presentation.severityColor
         monitoringEnabled = AppSettings.shared.thermalMonitoringEnabled
-        // Initialize with current state
-        updateFromThermalState(ProcessInfo.processInfo.thermalState)
-        // Subscribe to thermal state change notifications
+
         setupNotificationObserver()
-        // Start polling if enabled
         if monitoringEnabled {
             startPolling()
         }
@@ -127,24 +121,36 @@ final class ThermalMonitorService: ObservableObject {
 
     private func updateFromThermalState(_ state: ProcessInfo.ThermalState) {
         thermalState = state
-
-        let range = Self.estimatedCelsiusRanges[state] ?? 20...40
-        temperatureRangeCelsius = range
-
-        // Use midpoint of range as estimated temperature
-        let midCelsius = (range.lowerBound + range.upperBound) / 2.0
-        temperatureCelsius = midCelsius
-        temperatureFahrenheit = Self.toFahrenheit(midCelsius)
-
-        // Fahrenheit range
-        temperatureRangeFahrenheit = Self.toFahrenheit(range.lowerBound)...Self.toFahrenheit(range.upperBound)
-
-        // Status label
-        statusLabel = labelFor(state)
-        severityColor = colorFor(state)
+        let presentation = Self.presentation(for: state)
+        temperatureRangeCelsius = presentation.rangeCelsius
+        temperatureCelsius = presentation.temperatureCelsius
+        temperatureFahrenheit = presentation.temperatureFahrenheit
+        temperatureRangeFahrenheit = presentation.rangeFahrenheit
+        statusLabel = presentation.statusLabel
+        severityColor = presentation.severityColor
     }
 
-    private func labelFor(_ state: ProcessInfo.ThermalState) -> String {
+    private static func presentation(for state: ProcessInfo.ThermalState) -> (
+        rangeCelsius: ClosedRange<Double>,
+        temperatureCelsius: Double,
+        temperatureFahrenheit: Double,
+        rangeFahrenheit: ClosedRange<Double>,
+        statusLabel: String,
+        severityColor: String
+    ) {
+        let range = estimatedCelsiusRanges[state] ?? 20...40
+        let midCelsius = (range.lowerBound + range.upperBound) / 2.0
+        return (
+            rangeCelsius: range,
+            temperatureCelsius: midCelsius,
+            temperatureFahrenheit: toFahrenheit(midCelsius),
+            rangeFahrenheit: toFahrenheit(range.lowerBound)...toFahrenheit(range.upperBound),
+            statusLabel: label(for: state),
+            severityColor: color(for: state)
+        )
+    }
+
+    private static func label(for state: ProcessInfo.ThermalState) -> String {
         switch state {
         case .nominal:  return "Normal"
         case .fair:     return "Warm"
@@ -154,7 +160,7 @@ final class ThermalMonitorService: ObservableObject {
         }
     }
 
-    private func colorFor(_ state: ProcessInfo.ThermalState) -> String {
+    private static func color(for state: ProcessInfo.ThermalState) -> String {
         switch state {
         case .nominal:  return "green"
         case .fair:     return "green"
