@@ -167,13 +167,10 @@ struct ChatView: View {
                     .padding(.vertical, 8)
                 }
                 .background(.ultraThinMaterial)
-                messagesList
-                chatInputArea
             }
         }
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { chatToolbar }
         .sheet(isPresented: $showingModelSelector) {
             ModelSelectorSheet(selectedModel: $viewModel.currentModel)
         }
