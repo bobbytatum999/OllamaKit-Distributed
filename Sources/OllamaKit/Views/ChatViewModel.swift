@@ -5,7 +5,8 @@ import AVFoundation
 import Speech
 import PhotosUI
 
-class ChatViewModel: ObservableObject {
+@MainActor
+final class ChatViewModel: ObservableObject {
     @Published var isGenerating = false
     @Published var currentModel: ModelSnapshot?
     @Published var errorMessage: String?
@@ -15,7 +16,7 @@ class ChatViewModel: ObservableObject {
     @Published var generationStartTime: Date?
 
     func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters? = nil, imageData: [Data]? = nil) async {
-        let actualParameters = if let parameters = parameters { parameters } else { await MainActor.run { ModelParameters.appDefault } }
+        let actualParameters = parameters ?? ModelParameters.appDefault
         lastSentMessage = content
         guard let model = currentModel else {
             AppLogStore.shared.record(
