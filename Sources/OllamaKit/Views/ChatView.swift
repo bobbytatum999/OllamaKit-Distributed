@@ -62,111 +62,147 @@ struct ChatView: View {
         BuiltInModelCatalog.selectionModels(downloadedModels: modelStore.selectionSnapshots)
     }
 
+    private var parametersFormContent: some View {
+        Form {
+            Section("Temperature") {
+                Slider(value: $paramTemperature, in: 0...2, step: 0.1) {
+                    Text(String(format: "%.1f", paramTemperature))
+                }
+            }
+            Section("Top P") {
+                Slider(value: $paramTopP, in: 0...1, step: 0.05) {
+                    Text(String(format: "%.2f", paramTopP))
+                }
+            }
+            Section("Top K") {
+                Stepper(value: $paramTopK, in: 1...100) {
+                    Text("\(paramTopK)")
+                }
+            }
+            Section("Repeat Penalty") {
+                Slider(value: $paramRepeatPenalty, in: 1...2, step: 0.05) {
+                    Text(String(format: "%.2f", paramRepeatPenalty))
+                }
+            }
+            Section("Max Tokens") {
+                Stepper(value: $paramMaxTokens, in: 256...8192, step: 256) {
+                    Text("\(paramMaxTokens)")
+                }
+            }
+        }
+        .navigationTitle("Parameters")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var messagesListView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    ForEach(session.orderedMessages, id: \.id) { message in
+                        MessageBubble(message: message)
+                            .id(message.id)
+                    }
+
+                    if viewModel.isGenerating {
+                        TypingIndicator()
+                            .id("typing")
+                    }
+
+                    Color.clear
+                        .frame(height: 1)
+                        .id(bottomID)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+            }
+            .onChange(of: session.orderedMessages.count) {
+                withAnimation {
+                    proxy.scrollTo(bottomID, anchor: .bottom)
+                }
+            }
+            .onChange(of: viewModel.isGenerating) {
+                withAnimation {
+                    proxy.scrollTo(bottomID, anchor: .bottom)
+                }
+            }
+            .onChange(of: viewModel.streamRevision) {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo(bottomID, anchor: .bottom)
+                }
+            }
+        }
+    }
+
+    private var inputAreaView: some View {
+        VStack(spacing: 0) {
+            Divider()
+
+            HStack(spacing: 12) {
+                Button(action: { showingModelSelector = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "cube.fill")
+                            .font(.system(size: 12))
+                        Text(viewModel.currentModel?.displayName ?? "Select Model")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isGenerating)
+
+                Spacer()
+
+                if viewModel.isGenerating {
+                    Button(action: { viewModel.stopGeneration() }) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+
+            HStack(spacing: 12) {
+                TextField("Message", text: $messageText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16))
+                    .lineLimit(1...5)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(.white.opacity(0.1), lineWidth: 0.5)
+                            )
+                    )
+
+                Button(action: sendMessage) {
+                    Image(systemName: sendButtonSystemImage)
+                        .font(.system(size: 32))
+                        .foregroundStyle(sendButtonColor)
+                }
+                .disabled((trimmedMessageText.isEmpty && !canStartOrStopVoiceInput) || viewModel.isGenerating)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .background(.ultraThinMaterial)
+    }
+
     var body: some View {
         ZStack {
             AnimatedMeshBackground()
             VStack(spacing: 0) {
-                // Messages List
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            ForEach(session.orderedMessages, id: \.id) { message in
-                                MessageBubble(message: message)
-                                    .id(message.id)
-                            }
-                            
-                            if viewModel.isGenerating {
-                                TypingIndicator()
-                                    .id("typing")
-                            }
-                            
-                            Color.clear
-                                .frame(height: 1)
-                                .id(bottomID)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 16)
-                    }
-                    .onChange(of: session.orderedMessages.count) {
-                        withAnimation {
-                            proxy.scrollTo(bottomID, anchor: .bottom)
-                        }
-                    }
-                    .onChange(of: viewModel.isGenerating) {
-                        withAnimation {
-                            proxy.scrollTo(bottomID, anchor: .bottom)
-                        }
-                    }
-                    .onChange(of: viewModel.streamRevision) {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(bottomID, anchor: .bottom)
-                        }
-                    }
-                }
-                
-                // Input Area
-                VStack(spacing: 0) {
-                    Divider()
-                    
-                    HStack(spacing: 12) {
-                        // Model selector button
-                        Button(action: { showingModelSelector = true }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "cube.fill")
-                                    .font(.system(size: 12))
-                                Text(viewModel.currentModel?.displayName ?? "Select Model")
-                                    .font(.system(size: 13, weight: .medium))
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule()
-                                    .fill(.ultraThinMaterial)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(viewModel.isGenerating)
-                        
-                        Spacer()
-                        
-                        if viewModel.isGenerating {
-                            Button(action: { viewModel.stopGeneration() }) {
-                                Image(systemName: "stop.circle.fill")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(.red)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-
-                    HStack(spacing: 12) {
-                        TextField("Message", text: $messageText, axis: .vertical)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 16))
-                            .lineLimit(1...5)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .fill(.ultraThinMaterial)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 20)
-                                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                                    )
-                            )
-                        
-                        Button(action: sendMessage) {
-                            Image(systemName: sendButtonSystemImage)
-                                .font(.system(size: 32))
-                                .foregroundStyle(sendButtonColor)
-                        }
-                        .disabled((trimmedMessageText.isEmpty && !canStartOrStopVoiceInput) || viewModel.isGenerating)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                }
-                .background(.ultraThinMaterial)
+                messagesListView
+                inputAreaView
             }
         }
         .navigationTitle(session.title)
@@ -188,7 +224,6 @@ struct ChatView: View {
         .task {
             await modelStore.refresh()
             syncCurrentModelSelection()
-            // Sync parameter defaults from user's Settings
             let settings = AppSettings.shared
             paramTemperature = settings.defaultTemperature
             paramTopP = settings.defaultTopP
@@ -197,8 +232,6 @@ struct ChatView: View {
             paramMaxTokens = settings.maxTokens
         }
         .onDisappear {
-            // FIX: Cancel speech recognition Task when view disappears.
-            // Previously the Task ran indefinitely even after the view was removed.
             if isRecording {
                 isRecording = false
             }

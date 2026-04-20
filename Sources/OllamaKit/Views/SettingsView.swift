@@ -852,9 +852,9 @@ struct ModelPerformanceSection: View {
     }
 
     private var averageTokensPerSecond: Double {
-        let samples = entries.filter { $0.phase == .generate && $0.tokensPerSecond > 0 && $0.wasSuccessful }
+        let samples = entries.filter { $0.phase == .generate && ($0.tokensPerSecond ?? 0) > 0 && $0.wasSuccessful }
         guard !samples.isEmpty else { return 0 }
-        return samples.reduce(0) { $0 + $1.tokensPerSecond } / Double(samples.count)
+        return samples.reduce(0) { $0 + ($1.tokensPerSecond ?? 0) } / Double(samples.count)
     }
 
     var body: some View {
@@ -886,7 +886,7 @@ struct ModelPerformanceSection: View {
                                 .font(.system(size: 13, weight: .semibold))
                             Text(
                                 entry.phase == .generate
-                                ? String(format: "%.1f ms • %d tokens • %.1f tok/s%@", entry.elapsedMs, entry.tokens, entry.tokensPerSecond, entry.wasSuccessful ? "" : " • failed")
+                                ? String(format: "%.1f ms • %d tokens • %.1f tok/s%@", entry.elapsedMs, entry.tokens ?? 0, entry.tokensPerSecond ?? 0, entry.wasSuccessful ? "" : " • failed")
                                 : String(format: "%.1f ms%@", entry.elapsedMs, entry.wasSuccessful ? "" : " • failed")
                             )
                             .font(.system(size: 12))
