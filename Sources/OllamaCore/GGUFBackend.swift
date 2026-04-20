@@ -60,10 +60,12 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
         let configuration = BackendConfiguration(
             catalogId: entry.catalogId,
             modelPath: path,
-            contextLength: min(runtime.contextLength, 4096), // Limit context during validation
+            // Keep validation well below normal chat settings so borderline models
+            // fail safely instead of exhausting memory just to answer "can this load?".
+            contextLength: min(runtime.contextLength, 1024),
             gpuLayers: 0, // Use CPU only for validation to avoid GPU memory issues
-            threads: min(runtime.threads, 4), // Limit threads during validation
-            batchSize: 32, // Use minimal batch size for validation
+            threads: min(runtime.threads, 2), // Limit threads during validation
+            batchSize: 16, // Use minimal batch size for validation
             kvCachePreset: .platformDefault,
             flashAttentionEnabled: false, // Disable flash attention for validation
             mmapEnabled: true, // Use mmap to reduce memory pressure

@@ -334,6 +334,7 @@ final class ModelStorage: ObservableObject {
     func bootstrap() async {
         await migrateLegacyModelsIfNeeded()
         await refresh()
+        await validatePendingGGUFModels()
     }
 
     func refresh() async {
@@ -535,6 +536,15 @@ final class ModelStorage: ObservableObject {
                 return nil
             }
 
+            if entry.backendKind == .ggufLlama {
+                markValidationInProgress(for: entry.catalogId)
+            }
+            defer {
+                if entry.backendKind == .ggufLlama {
+                    clearValidationInProgress(for: entry.catalogId)
+                }
+            }
+
             let runtime = RuntimePreferences.validationBaseline(
                 contextLength: min(entry.runtimeContextLength, AppSettings.shared.defaultContextLength)
             )
@@ -688,14 +698,6 @@ final class ModelStorage: ObservableObject {
     private static let validationInProgressKey = "ollamakit.validation.inprogress.v1"
 
     private func validatePendingGGUFModels() async {
-        let pendingCatalogIDs = snapshots
-            .filter {
-                $0.backendKind == .ggufLlama
-                    && $0.fileExists
-                    && ($0.effectiveValidationStatus == .pending || $0.effectiveValidationStatus == .unknown)
-            }
-            .map(\.catalogId)
-
         // CRASH-LOOP GUARD
         // If a model's catalogId is already in validationInProgressKey on this launch,
         // the previous app session was killed while validating it (most likely an OOM
@@ -708,6 +710,12 @@ final class ModelStorage: ObservableObject {
         )
 
         if !previouslyInProgress.isEmpty {
+            let recoverableCatalogIDs = Set(
+                snapshots
+                    .filter { $0.backendKind == .ggufLlama && $0.fileExists }
+                    .map(\.catalogId)
+            )
+
             await MainActor.run {
                 AppLogStore.shared.record(
                     .modelsCatalog,
@@ -718,7 +726,7 @@ final class ModelStorage: ObservableObject {
                 )
             }
 
-            for catalogId in pendingCatalogIDs where previouslyInProgress.contains(catalogId) {
+            for catalogId in recoverableCatalogIDs where previouslyInProgress.contains(catalogId) {
                 let failedOutcome = ModelValidationOutcome(
                     status: .failed,
                     message: "Validation was interrupted (the app was terminated, likely due to low memory). Tap Revalidate when other apps are closed and more memory is available."
@@ -740,10 +748,20 @@ final class ModelStorage: ObservableObject {
                     }
                 }
             }
+
+            await refresh()
         }
 
         // Clear any stale journal entries from last session before starting this session's work.
         UserDefaults.standard.removeObject(forKey: Self.validationInProgressKey)
+
+        let pendingCatalogIDs = snapshots
+            .filter {
+                $0.backendKind == .ggufLlama
+                    && $0.fileExists
+                    && ($0.effectiveValidationStatus == .pending || $0.effectiveValidationStatus == .unknown)
+            }
+            .map(\.catalogId)
 
         // Only auto-validate models that were NOT mid-validation when the app last crashed.
         let safeToValidate = pendingCatalogIDs.filter { !previouslyInProgress.contains($0) }
@@ -778,6 +796,26 @@ final class ModelStorage: ObservableObject {
             } else {
                 UserDefaults.standard.set(remaining, forKey: Self.validationInProgressKey)
             }
+        }
+    }
+
+    private func markValidationInProgress(for catalogId: String) {
+        var inProgress = Set(
+            (UserDefaults.standard.array(forKey: Self.validationInProgressKey) as? [String]) ?? []
+        )
+        inProgress.insert(catalogId)
+        UserDefaults.standard.set(Array(inProgress).sorted(), forKey: Self.validationInProgressKey)
+    }
+
+    private func clearValidationInProgress(for catalogId: String) {
+        var remaining = Set(
+            (UserDefaults.standard.array(forKey: Self.validationInProgressKey) as? [String]) ?? []
+        )
+        remaining.remove(catalogId)
+        if remaining.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.validationInProgressKey)
+        } else {
+            UserDefaults.standard.set(Array(remaining).sorted(), forKey: Self.validationInProgressKey)
         }
     }
 }

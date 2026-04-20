@@ -110,5 +110,3 @@ struct ModelSelectorSheet: View {
         }
     }
 }
-
-@MainActor
