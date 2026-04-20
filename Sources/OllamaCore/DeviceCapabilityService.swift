@@ -92,8 +92,8 @@ public final class DeviceCapabilityService {
         return CompatibilityReport(
             backendKind: .ggufLlama,
             level: .unavailable,
-            title: "Too Large",
-            message: "This GGUF file is above the likely working size for \(profile.deviceLabel)."
+            title: "Above Budget",
+            message: "This GGUF file is above the app's estimated comfort budget for \(profile.deviceLabel), but you can still download it and try loading it manually."
         )
     }
 

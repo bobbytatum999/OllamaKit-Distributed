@@ -177,6 +177,25 @@ private extension ModelSnapshot {
         }
     }
 
+    var canAttemptLoadInCurrentBuild: Bool {
+        switch backendKind {
+        case .ggufLlama:
+            return fileExists
+        case .coreMLPackage:
+            return hasRunnableCoreMLPayload
+        case .appleFoundation:
+            return true
+        }
+    }
+
+    var loadActionTitle: String {
+        if backendKind == .ggufLlama && !isValidatedRunnable {
+            return "Load Anyway"
+        }
+
+        return "Load"
+    }
+
     var runtimeAvailabilityLabel: String? {
         switch backendKind {
         case .ggufLlama:
@@ -186,7 +205,7 @@ private extension ModelSnapshot {
             case .failed:
                 return "Validation Failed"
             case .unknown:
-                return "Needs Validation"
+                return "Not Yet Validated"
             case .validated:
                 return nil
             }
@@ -202,6 +221,9 @@ private extension ModelSnapshot {
         switch backendKind {
         case .ggufLlama:
             return validationSummary
+                ?? (fileExists && !isValidatedRunnable
+                    ? "This model has not been confirmed by the app's conservative validation pass yet, but you can still try loading it manually."
+                    : nil)
         case .coreMLPackage:
             guard !hasRunnableCoreMLPayload else { return nil }
             return "Import the full ANEMLL/CoreML model folder containing meta.yaml, tokenizer assets, and compiled .mlmodelc or .mlpackage payloads."
@@ -356,14 +378,14 @@ struct DownloadedModelRow: View {
             }
 
             HStack(spacing: 10) {
-                if model.isRunnableInCurrentBuild {
-                    Button("Load") {
+                if model.canAttemptLoadInCurrentBuild {
+                    Button(model.loadActionTitle) {
                         loadModel()
                     }
                     .buttonStyle(.borderedProminent)
                 }
 
-                if AppSettings.shared.defaultModelId != model.persistentReference, model.isRunnableInCurrentBuild {
+                if AppSettings.shared.defaultModelId != model.persistentReference, model.canAttemptLoadInCurrentBuild {
                     Button("Set Default") {
                         AppSettings.shared.defaultModelId = model.persistentReference
                     }
@@ -391,11 +413,11 @@ struct DownloadedModelRow: View {
                 )
         )
         .contextMenu {
-            if model.isRunnableInCurrentBuild {
+            if model.canAttemptLoadInCurrentBuild {
                 Button {
                     loadModel()
                 } label: {
-                    Label("Load Model", systemImage: "play.circle")
+                    Label(model.backendKind == .ggufLlama && !model.isValidatedRunnable ? "Load Anyway" : "Load Model", systemImage: "play.circle")
                 }
             }
 
@@ -420,8 +442,8 @@ struct DownloadedModelRow: View {
             }
         }
         .confirmationDialog("Model Options", isPresented: $showingOptions, titleVisibility: .visible) {
-            if model.isRunnableInCurrentBuild {
-                Button("Load Model") {
+            if model.canAttemptLoadInCurrentBuild {
+                Button(model.backendKind == .ggufLlama && !model.isValidatedRunnable ? "Load Anyway" : "Load Model") {
                     loadModel()
                 }
             }
@@ -432,7 +454,7 @@ struct DownloadedModelRow: View {
                 }
             }
 
-            if model.isRunnableInCurrentBuild {
+            if model.canAttemptLoadInCurrentBuild {
                 Button("Set as Default") {
                     AppSettings.shared.defaultModelId = model.persistentReference
                     viewModel.alertTitle = "Default Model"
@@ -516,7 +538,14 @@ struct DownloadedModelRow: View {
             viewModel.showError = true
 
             await MainActor.run {
-                HapticManager.notification(validatedSnapshot?.isValidatedRunnable == true ? .success : .error)
+                switch validatedSnapshot?.effectiveValidationStatus {
+                case .validated:
+                    HapticManager.notification(.success)
+                case .unknown, .pending:
+                    HapticManager.notification(.warning)
+                default:
+                    HapticManager.notification(.error)
+                }
             }
         }
     }
@@ -1820,7 +1849,7 @@ struct ModelDownloadWarning: Identifiable {
         case .supported:
             return "Large Model Download"
         case .tooLarge:
-            return "Model May Not Fit"
+            return "Download With Caution"
         case .recommended, .unknown:
             return "Download Model"
         }
@@ -1839,7 +1868,7 @@ struct ModelDownloadWarning: Identifiable {
         case .supported:
             return "\(filename) (\(fileSize)) may still run on \(profile.deviceLabel), but the estimated runtime working set is \(estimatedWorkingSet), so expect slower generation or frequent unload/reload cycles.\n\nRecommended file budget: up to \(recommendedBudget)\nMay run file budget: up to \(supportedBudget)"
         case .tooLarge:
-            return "\(filename) (\(fileSize)) is likely to fail on \(profile.deviceLabel). Estimated runtime working set: \(estimatedWorkingSet).\n\nRecommended file budget: up to \(recommendedBudget)\nMay run file budget: up to \(supportedBudget)"
+            return "\(filename) (\(fileSize)) is above the app's estimated comfort budget for \(profile.deviceLabel), but it may still load depending on current memory pressure and runtime settings. Estimated runtime working set: \(estimatedWorkingSet).\n\nRecommended file budget: up to \(recommendedBudget)\nMay run file budget: up to \(supportedBudget)"
         case .recommended, .unknown:
             return "Download \(filename)?"
         }
@@ -1859,7 +1888,7 @@ enum ModelFileCompatibility {
         case .supported:
             return "May Run"
         case .tooLarge:
-            return "Too Large"
+            return "Use Caution"
         case .unknown:
             return "Unknown"
         }
@@ -1872,7 +1901,7 @@ enum ModelFileCompatibility {
         case .supported:
             return .orange
         case .tooLarge:
-            return .red
+            return .orange
         case .unknown:
             return .secondary
         }

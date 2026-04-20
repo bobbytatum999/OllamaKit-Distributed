@@ -549,9 +549,6 @@ final class HuggingFaceService: @unchecked Sendable {
         return selectedFiles
             .compactMap { file -> HuggingFaceCandidate? in
                 let compatibility = compatibilityReport(for: file.size, runtimeProfile: runtimeProfile)
-                if !includeCautionaryModels && compatibility.level == .unavailable {
-                    return nil
-                }
                 return HuggingFaceCandidate(model: model, file: file, assessment: assessment, compatibility: compatibility)
             }
             .sorted { compareCandidates($0, $1) }
@@ -623,7 +620,12 @@ final class HuggingFaceService: @unchecked Sendable {
             return CompatibilityReport(backendKind: .ggufLlama, level: .supported, title: "May Run", message: "This GGUF file is larger than recommended for \(runtimeProfile.deviceLabel), but it still has a realistic chance of loading.")
         }
 
-        return CompatibilityReport(backendKind: .ggufLlama, level: .unavailable, title: "Too Large", message: "This GGUF file is above the likely working size for \(runtimeProfile.deviceLabel).")
+        return CompatibilityReport(
+            backendKind: .ggufLlama,
+            level: .unavailable,
+            title: "Above Budget",
+            message: "This GGUF file is above the app's estimated comfort budget for \(runtimeProfile.deviceLabel), but you can still download it and try a manual load."
+        )
     }
 
     private func log(_ category: AppLogCategory, level: AppLogLevel, title: String, message: String, metadata: [String: String] = [:]) async {

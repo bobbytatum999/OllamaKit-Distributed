@@ -50,9 +50,6 @@ public actor RuntimeCoordinator {
         }
 
         let compatibility = await capabilityService.compatibility(for: entry)
-        guard compatibility.isUsable else {
-            return ModelValidationOutcome(status: .failed, message: compatibility.message)
-        }
 
         switch entry.backendKind {
         case .ggufLlama:
@@ -62,16 +59,28 @@ public actor RuntimeCoordinator {
 
             do {
                 try await ggufBackend.validate(entry: entry, runtime: runtime)
-                return ModelValidationOutcome(status: .validated, message: "Validated a local GGUF load with conservative runtime settings.")
+                let validationMessage: String
+                if compatibility.level == .unavailable {
+                    validationMessage = "Validated a local GGUF load even though this file is above the app's suggested device budget."
+                } else {
+                    validationMessage = "Validated a local GGUF load with conservative runtime settings."
+                }
+                return ModelValidationOutcome(status: .validated, message: validationMessage)
             } catch {
-                return ModelValidationOutcome(status: .failed, message: error.localizedDescription)
+                return ggufValidationOutcome(for: error, compatibility: compatibility)
             }
         case .coreMLPackage:
+            guard compatibility.isUsable else {
+                return ModelValidationOutcome(status: .failed, message: compatibility.message)
+            }
             return ModelValidationOutcome(
                 status: .validated,
                 message: compatibility.message
             )
         case .appleFoundation:
+            guard compatibility.isUsable else {
+                return ModelValidationOutcome(status: .failed, message: compatibility.message)
+            }
             return ModelValidationOutcome(
                 status: .validated,
                 message: compatibility.message
@@ -86,7 +95,7 @@ public actor RuntimeCoordinator {
         }
 
         let compatibility = await capabilityService.compatibility(for: entry)
-        guard compatibility.isUsable else {
+        if entry.backendKind != .ggufLlama, !compatibility.isUsable {
             throw InferenceError.compatibilityFailure(compatibility.message)
         }
 
@@ -161,6 +170,29 @@ public actor RuntimeCoordinator {
         #endif
 
         return UnsupportedAppleFoundationBackend()
+    }
+
+    private func ggufValidationOutcome(
+        for error: Error,
+        compatibility: CompatibilityReport
+    ) -> ModelValidationOutcome {
+        let message = error.localizedDescription
+        if compatibility.level == .unavailable || isInconclusiveGGUFValidationError(message) {
+            return ModelValidationOutcome(
+                status: .unknown,
+                message: "\(message) You can still try loading this model manually."
+            )
+        }
+
+        return ModelValidationOutcome(status: .failed, message: message)
+    }
+
+    private func isInconclusiveGGUFValidationError(_ message: String) -> Bool {
+        let normalized = message.lowercased()
+        return normalized.contains("insufficient memory to validate")
+            || normalized.contains("validation timed out")
+            || normalized.contains("above the app's suggested device budget")
+            || normalized.contains("conservative validation skipped")
     }
 }
 

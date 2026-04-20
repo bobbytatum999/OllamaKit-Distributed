@@ -151,7 +151,7 @@ struct ModelSnapshot: @preconcurrency Identifiable, Hashable, Sendable {
     var canBeSelectedForChat: Bool {
         switch backendKind {
         case .ggufLlama:
-            return fileExists && effectiveValidationStatus != .failed
+            return fileExists
         case .appleFoundation:
             return true
         case .coreMLPackage:
@@ -545,8 +545,22 @@ final class ModelStorage: ObservableObject {
                 }
             }
 
-            let runtime = RuntimePreferences.validationBaseline(
-                contextLength: min(entry.runtimeContextLength, AppSettings.shared.defaultContextLength)
+            let validationContextLength = min(entry.runtimeContextLength, AppSettings.shared.defaultContextLength)
+            let settings = AppSettings.shared
+            let runtime = RuntimePreferences(
+                contextLength: min(max(validationContextLength, 512), 1024),
+                gpuLayers: settings.gpuLayers,
+                threads: settings.threads,
+                batchSize: settings.batchSize,
+                kvCachePreset: .platformDefault,
+                flashAttentionEnabled: false,
+                mmapEnabled: true,
+                mlockEnabled: false,
+                turboQuantMode: settings.turboQuantMode,
+                kvCacheTypeK: settings.kvCacheTypeK,
+                kvCacheTypeV: settings.kvCacheTypeV,
+                keepModelInMemory: false,
+                autoOffloadMinutes: 1
             )
 
             // FIX: Wrap validation in a separate task with its own error handling
@@ -728,8 +742,8 @@ final class ModelStorage: ObservableObject {
 
             for catalogId in recoverableCatalogIDs where previouslyInProgress.contains(catalogId) {
                 let failedOutcome = ModelValidationOutcome(
-                    status: .failed,
-                    message: "Validation was interrupted (the app was terminated, likely due to low memory). Tap Revalidate when other apps are closed and more memory is available."
+                    status: .unknown,
+                    message: "Automatic validation was interrupted, likely because the app was terminated under memory pressure. You can still try loading this model manually or revalidate again later."
                 )
                 do {
                     _ = try await ModelRegistryStore.shared.updateValidation(

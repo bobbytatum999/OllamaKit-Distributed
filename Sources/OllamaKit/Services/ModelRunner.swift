@@ -51,22 +51,6 @@ final class ModelRunner: ObservableObject {
                 ]
             )
         }
-        if let snapshot = await ModelStorage.shared.snapshot(name: catalogId) {
-            let backendKind = await MainActor.run { snapshot.backendKind }
-            let isValidatedRunnable = await MainActor.run { snapshot.isValidatedRunnable }
-            if backendKind == .ggufLlama && !isValidatedRunnable {
-                let refreshedSnapshot = await ModelStorage.shared.validateModel(catalogId: await MainActor.run { snapshot.catalogId }) ?? snapshot
-                let refreshedIsValid = await MainActor.run { refreshedSnapshot.isValidatedRunnable }
-                guard refreshedIsValid else {
-                    let summary = await MainActor.run { refreshedSnapshot.validationSummary }
-                    throw ModelError.backendUnavailable(
-                        summary
-                            ?? "This GGUF model failed validation on this device and cannot be loaded for chat."
-                    )
-                }
-            }
-        }
-
         let (settings_gpuLayers, settings_threads, settings_batchSize, settings_kvCachePreset,
              settings_flashAttention, settings_mmap, settings_mlock, settings_keepInMemory,
              settings_autoOffload, settings_turboQuant, settings_kvCacheTypeK, settings_kvCacheTypeV) = await MainActor.run {
@@ -97,6 +81,16 @@ final class ModelRunner: ObservableObject {
                 catalogId: catalogId,
                 runtime: runtime
             )
+            if entry.backendKind == .ggufLlama {
+                _ = try? await ModelRegistryStore.shared.updateValidation(
+                    catalogId: entry.catalogId,
+                    outcome: ModelValidationOutcome(
+                        status: .validated,
+                        message: "Loaded successfully on this device with the current runtime settings."
+                    )
+                )
+                await ModelStorage.shared.refresh()
+            }
             await updateActiveState(from: entry)
 
             let elapsedMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000

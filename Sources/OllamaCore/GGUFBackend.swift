@@ -44,16 +44,16 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             throw InferenceError.modelNotFound("Model file not found at the stored path. Please re-download the model.")
         }
 
-        // FIX: Check file size before attempting validation to prevent OOM crashes
+        // Keep auto-validation cautious, but do not permanently fail a model just
+        // because the conservative validation pass looks risky on the current launch.
         let fileSize = entry.capabilitySummary.sizeBytes
         let availableMemory = getAvailableMemory()
-        // Require at least 1.5x the file size in available memory for safe validation
-        guard fileSize < availableMemory * 2 / 3 else {
+        if runtime.gpuLayers == 0, fileSize >= availableMemory * 2 / 3 {
             let fileSizeStr = ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
             let availableStr = ByteCountFormatter.string(fromByteCount: availableMemory, countStyle: .memory)
             throw InferenceError.backendUnavailable(
-                "Insufficient memory to validate this model. Model size: \(fileSizeStr), Available: \(availableStr). " +
-                "Try closing other apps or downloading a smaller model."
+                "Conservative validation skipped because the model may need more free memory than is currently available. " +
+                "Model size: \(fileSizeStr), Available: \(availableStr). You can still try loading it manually."
             )
         }
 
@@ -63,7 +63,7 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
             // Keep validation well below normal chat settings so borderline models
             // fail safely instead of exhausting memory just to answer "can this load?".
             contextLength: min(runtime.contextLength, 1024),
-            gpuLayers: 0, // Use CPU only for validation to avoid GPU memory issues
+            gpuLayers: max(runtime.gpuLayers, 0),
             threads: min(runtime.threads, 2), // Limit threads during validation
             batchSize: 16, // Use minimal batch size for validation
             kvCachePreset: .platformDefault,
@@ -114,6 +114,8 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
                             }
 
                             continuation.resume()
+                        } catch let inferenceError as InferenceError {
+                            continuation.resume(throwing: inferenceError)
                         } catch {
                             let fileName = URL(fileURLWithPath: path).lastPathComponent
                             let sizeDescription = ByteCountFormatter.string(
