@@ -215,9 +215,11 @@ jobs:
           CONFIGURATION: ${{ inputs.configuration }}
         run: |
           set -e
+          REPO_ROOT="$GITHUB_WORKSPACE"
 
           # Navigate to iOS project
           cd "$IOS_PATH"
+          IOS_PROJECT_ROOT="$(pwd)"
 
           # Find workspace or project
           WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" | head -1)
@@ -261,7 +263,7 @@ jobs:
           DERIVED_DATA_PATH="${GITHUB_WORKSPACE}/DerivedData"
 
           if [ "$PROJECT_TYPE" = "flutter" ]; then
-            cd ..
+            cd "$REPO_ROOT"
             if [ "$CONFIGURATION" = "Debug" ]; then
               echo "Building Flutter iOS Debug..."
               flutter build ios --debug --no-codesign
@@ -269,7 +271,7 @@ jobs:
               echo "Building Flutter iOS Release..."
               flutter build ios --release --no-codesign
             fi
-            cd "$IOS_PATH"
+            cd "$IOS_PROJECT_ROOT"
           elif [ "$PROJECT_TYPE" = "reactnative" ] || [ "$PROJECT_TYPE" = "expo" ]; then
             # Use xcodebuild directly for React Native/Expo
             echo "Building React Native iOS ($CONFIGURATION)..."
@@ -322,7 +324,7 @@ jobs:
 
             if [ "$USE_SIGNING" = "true" ]; then
               # For signed builds, use archive
-              BUILD_CMD="$BUILD_CMD -archivePath ../build/App.xcarchive archive"
+              BUILD_CMD="$BUILD_CMD -archivePath $REPO_ROOT/build/App.xcarchive archive"
             else
               # For unsigned builds, use faster 'build' action
               BUILD_CMD="$BUILD_CMD CODE_SIGNING_ALLOWED=NO build"
@@ -335,7 +337,8 @@ jobs:
           # Create IPA
           if [ "$USE_SIGNING" = "true" ]; then
             # For signed builds, use xcodebuild -exportArchive
-            cd ..
+            mkdir -p "$REPO_ROOT/build"
+            EXPORT_OPTIONS_PLIST="$REPO_ROOT/ExportOptions.plist"
             printf '%s\n' \
               '<?xml version="1.0" encoding="UTF-8"?>' \
               '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
@@ -346,15 +349,15 @@ jobs:
               '    <key>signingStyle</key>' \
               '    <string>automatic</string>' \
               '</dict>' \
-              '</plist>' > ExportOptions.plist
+              '</plist>' > "$EXPORT_OPTIONS_PLIST"
             xcodebuild -exportArchive \
-              -archivePath build/App.xcarchive \
-              -exportOptionsPlist ExportOptions.plist \
-              -exportPath build/export
+              -archivePath "$REPO_ROOT/build/App.xcarchive" \
+              -exportOptionsPlist "$EXPORT_OPTIONS_PLIST" \
+              -exportPath "$REPO_ROOT/build/export"
 
             # Move IPA to expected location
-            mv build/export/*.ipa "build/$BUILD_ID.ipa"
-            echo "Created signed IPA: build/$BUILD_ID.ipa"
+            mv "$REPO_ROOT"/build/export/*.ipa "$REPO_ROOT/build/$BUILD_ID.ipa"
+            echo "Created signed IPA: $REPO_ROOT/build/$BUILD_ID.ipa"
           else
             # For unsigned builds, find .app and create IPA
             if [ "$PROJECT_TYPE" = "flutter" ]; then
@@ -370,13 +373,15 @@ jobs:
               exit 1
             fi
             echo "Found app at: $APP_PATH"
-            cd ..
-            mkdir -p build/Payload
-            cp -R "$APP_PATH" build/Payload/
-            cd build
-            zip -rq "$BUILD_ID.ipa" Payload
-            rm -rf Payload
-            echo "Created unsigned IPA: build/$BUILD_ID.ipa"
+            rm -rf "$REPO_ROOT/build/Payload"
+            mkdir -p "$REPO_ROOT/build/Payload"
+            cp -R "$APP_PATH" "$REPO_ROOT/build/Payload/"
+            (
+              cd "$REPO_ROOT/build"
+              zip -rq "$BUILD_ID.ipa" Payload
+            )
+            rm -rf "$REPO_ROOT/build/Payload"
+            echo "Created unsigned IPA: $REPO_ROOT/build/$BUILD_ID.ipa"
           fi
 
       - name: Upload IPA artifact
