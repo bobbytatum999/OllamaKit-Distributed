@@ -633,6 +633,7 @@ struct ChatView: View {
 
         return voiceInput.isRecording ? .red : .secondary
     }
+}
 
 @MainActor
 class ChatViewModel: ObservableObject {
