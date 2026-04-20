@@ -1,0 +1,14 @@
+{
+  "project": ".\\builder-windows-amd64.exe ios build",
+  "platform": "ios",
+  "github": {
+    "owner": "bobbytatum999",
+    "repo": "OllamaKit-Distributed"
+  },
+  "ios": {},
+  "flutter": {
+    "watch": {}
+  },
+  "reactNative": {},
+  "mobai": {}
+}
