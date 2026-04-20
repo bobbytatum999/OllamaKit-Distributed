@@ -378,14 +378,16 @@ struct DownloadedModelRow: View {
             }
 
             HStack(spacing: 10) {
-                if model.canAttemptLoadInCurrentBuild {
-                    Button(model.loadActionTitle) {
+                if model.isRunnableInCurrentBuild {
+                    Button("Load") {
+
                         loadModel()
                     }
                     .buttonStyle(.borderedProminent)
                 }
 
-                if AppSettings.shared.defaultModelId != model.persistentReference, model.canAttemptLoadInCurrentBuild {
+                if AppSettings.shared.defaultModelId != model.persistentReference, model.isRunnableInCurrentBuild {
+
                     Button("Set Default") {
                         AppSettings.shared.defaultModelId = model.persistentReference
                     }
@@ -565,6 +567,63 @@ struct DownloadedModelRow: View {
 private struct ModelBadge: View {
     let text: String
     let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+            Text(text)
+        }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.thinMaterial)
+        )
+    }
+}
+
+private struct FlowLayout<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder var content: Content
+
+    init(spacing: CGFloat = 8, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            content
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+@MainActor
+struct ModelAgentCapabilitiesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var settings = AppSettings.shared
+
+    let model: ModelSnapshot
+
+    private var runtimeCapabilities: AgentCapabilityProfile {
+        AgentToolRuntime.shared.runtimeCapabilityPreview()
+    }
+
+    private var runtimePackages: [String: RuntimePackageRecord] {
+        Dictionary(
+            uniqueKeysWithValues: AgentToolRuntime.shared
+                .runtimePackagePreview(for: model)
+                .map { ($0.id, $0) }
+        )
+    }
+
+    private var effectiveCapabilities: ModelAgentCapabilityProfile {
+        AgentToolRuntime.shared.effectiveCapabilitiesPreview(for: model) ?? model.effectiveAgentCapabilities
+    }
+
 
     var body: some View {
         HStack(spacing: 4) {
@@ -1171,7 +1230,7 @@ struct ModelDetailSheet: View {
                     title: Text(warning.title),
                     message: Text(warning.message),
                     primaryButton: .default(Text("Download Anyway")) {
-                        viewModel.confirmPendingDownload()
+                        viewModel.confirmPendingDownload(warning)
                     },
                     secondaryButton: .cancel {
                         viewModel.cancelPendingDownload()
@@ -1307,6 +1366,7 @@ struct GGUFFileRow: View {
                             ModelBadge(text: quant, systemImage: "cpu")
                         }
 
+
                         if let size = file.size {
                             ModelBadge(
                                 text: ByteCountFormatter.string(fromByteCount: size, countStyle: .file),
@@ -1348,7 +1408,10 @@ struct GGUFFileRow: View {
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
+
                     }
+
+                    ProgressView(value: Double(viewModel.downloadProgress) / 100.0)
 
                     Button {
                         viewModel.cancelCurrentDownload()
@@ -1647,8 +1710,8 @@ class ModelSearchViewModel: ObservableObject {
         }
     }
 
-    func confirmPendingDownload() {
-        guard let pendingDownloadWarning else { return }
+    func confirmPendingDownload(_ warning: ModelDownloadWarning? = nil) {
+        guard let pendingDownloadWarning = warning ?? pendingDownloadWarning else { return }
         self.pendingDownloadWarning = nil
 
         Task {

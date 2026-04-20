@@ -271,23 +271,19 @@ struct ModelSnapshot: @preconcurrency Identifiable, Hashable, Sendable {
 }
 
 extension RuntimePreferences {
-    @MainActor
-    static func fromSettings(_ settings: AppSettings? = nil, contextLength: Int? = nil) -> RuntimePreferences {
-        let resolvedSettings = settings ?? .shared
-        return RuntimePreferences(
-            contextLength: max(contextLength ?? resolvedSettings.defaultContextLength, 512),
-            gpuLayers: resolvedSettings.gpuLayers,
-            threads: resolvedSettings.threads,
-            batchSize: resolvedSettings.batchSize,
-            kvCachePreset: resolvedSettings.kvCachePreset,
-            flashAttentionEnabled: resolvedSettings.flashAttentionEnabled,
-            mmapEnabled: resolvedSettings.mmapEnabled,
-            mlockEnabled: resolvedSettings.mlockEnabled,
-            turboQuantMode: resolvedSettings.turboQuantMode,
-            kvCacheTypeK: resolvedSettings.kvCacheTypeK,
-            kvCacheTypeV: resolvedSettings.kvCacheTypeV,
-            keepModelInMemory: resolvedSettings.keepModelInMemory,
-            autoOffloadMinutes: resolvedSettings.autoOffloadMinutes
+    static func fromSettings(_ settings: AppSettings = .shared, contextLength: Int? = nil) -> RuntimePreferences {
+        RuntimePreferences(
+            contextLength: max(contextLength ?? settings.defaultContextLength, 512),
+            gpuLayers: settings.gpuLayers,
+            threads: settings.threads,
+            batchSize: settings.batchSize,
+            kvCachePreset: settings.kvCachePreset,
+            flashAttentionEnabled: settings.flashAttentionEnabled,
+            mmapEnabled: settings.mmapEnabled,
+            mlockEnabled: settings.mlockEnabled,
+            keepModelInMemory: settings.keepModelInMemory,
+            autoOffloadMinutes: settings.autoOffloadMinutes
+
         )
     }
 }
