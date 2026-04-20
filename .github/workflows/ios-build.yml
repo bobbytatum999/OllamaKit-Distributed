@@ -174,13 +174,27 @@ jobs:
 
           # Determine scheme (only needed for native projects)
           if [ -z "$SCHEME" ] && [ "$PROJECT_TYPE" = "native" ]; then
+            DEFAULT_SCHEME=""
             if [ -n "$WORKSPACE" ]; then
-              SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list 2>/dev/null | grep -A 100 "Schemes:" | tail -n +2 | grep -v -E "^[[:space:]]*Pods-" | head -1 | xargs)
+              DEFAULT_SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+              if xcodebuild -workspace "$WORKSPACE" -list 2>/dev/null | grep -A 100 "Schemes:" | tail -n +2 | xargs -I{} echo "{}" | grep -Fxq "$DEFAULT_SCHEME"; then
+                SCHEME="$DEFAULT_SCHEME"
+              else
+                SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list 2>/dev/null | grep -A 100 "Schemes:" | tail -n +2 | grep -v -E "^[[:space:]]*Pods-" | head -1 | xargs)
+              fi
               if [ -z "$SCHEME" ]; then
                 SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list 2>/dev/null | grep -A 100 "Schemes:" | tail -n +2 | head -1 | xargs)
               fi
             elif [ -n "$PROJECT" ]; then
-              SCHEME=$(xcodebuild -project "$PROJECT" -list 2>/dev/null | grep -A 100 "Schemes:" | tail -n +2 | head -1 | xargs)
+              DEFAULT_SCHEME=$(basename "$PROJECT" .xcodeproj)
+              if xcodebuild -project "$PROJECT" -list 2>/dev/null | grep -A 100 "Schemes:" | tail -n +2 | xargs -I{} echo "{}" | grep -Fxq "$DEFAULT_SCHEME"; then
+                SCHEME="$DEFAULT_SCHEME"
+              else
+                SCHEME=$(xcodebuild -project "$PROJECT" -list 2>/dev/null | grep -A 100 "Schemes:" | tail -n +2 | grep -v -E "^[[:space:]]*Pods-" | head -1 | xargs)
+              fi
+              if [ -z "$SCHEME" ]; then
+                SCHEME=$(xcodebuild -project "$PROJECT" -list 2>/dev/null | grep -A 100 "Schemes:" | tail -n +2 | head -1 | xargs)
+              fi
             fi
             echo "Building with scheme: $SCHEME (configuration: $CONFIGURATION)"
           fi
