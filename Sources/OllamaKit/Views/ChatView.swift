@@ -197,7 +197,101 @@ struct ChatView: View {
         .background(.ultraThinMaterial)
     }
 
+    private var chatErrorBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )
+    }
+
+    private var voiceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { voiceInput.errorMessage != nil },
+            set: { if !$0 { voiceInput.errorMessage = nil } }
+        )
+    }
+
     var body: some View {
+        mainContent
+            .sheet(isPresented: $showingModelSelector) {
+                ModelSelectorSheet(selectedModel: $viewModel.currentModel)
+            }
+            .sheet(isPresented: $showingCompareSheet) {
+                ComparisonSheetContent(selectedModel: $viewModel.currentModel)
+            }
+            .sheet(isPresented: $showingParameters) {
+                NavigationStack {
+                    parametersFormContent
+                }
+            }
+            .task {
+                await modelStore.refresh()
+                syncCurrentModelSelection()
+                let settings = AppSettings.shared
+                paramTemperature = settings.defaultTemperature
+                paramTopP = settings.defaultTopP
+                paramTopK = settings.defaultTopK
+                paramRepeatPenalty = settings.defaultRepeatPenalty
+                paramMaxTokens = settings.maxTokens
+            }
+            .onDisappear {
+                if isRecording {
+                    isRecording = false
+                }
+                recognitionTask?.cancel()
+                recognitionTask = nil
+                speechAudioEngine?.stop()
+                speechAudioEngine = nil
+                speechRequest?.endAudio()
+                speechRequest = nil
+                voiceInput.stopRecording()
+            }
+            .onChange(of: downloadedModelRevision) { _, _ in
+                syncCurrentModelSelection()
+            }
+            .onChange(of: viewModel.currentModel?.id) { _, _ in
+                if let selectedModel = viewModel.currentModel {
+                    session.modelId = selectedModel.persistentReference
+                    session.updatedAt = Date()
+                    try? modelContext.save()
+                } else if !session.modelId.isEmpty {
+                    session.modelId = ""
+                    session.updatedAt = Date()
+                    try? modelContext.save()
+                }
+            }
+            .alert("Chat Error", isPresented: chatErrorBinding) {
+                Button("Retry") {
+                    let lastMsg = viewModel.lastSentMessage
+                    viewModel.errorMessage = nil
+                    if !lastMsg.isEmpty {
+                        Task { await viewModel.sendMessage(lastMsg, in: session, context: modelContext) }
+                    }
+                }
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+            .alert("Voice Input Error", isPresented: voiceErrorBinding) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(voiceInput.errorMessage ?? "")
+            }
+            .alert("Rename Chat", isPresented: $showingRenameDialog) {
+                TextField("Chat Title", text: $pendingTitle)
+                Button("Save") {
+                    let trimmed = pendingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        session.title = trimmed
+                        session.updatedAt = Date()
+                        try? modelContext.save()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+    }
+
+    private var mainContent: some View {
         ZStack {
             AnimatedMeshBackground()
             VStack(spacing: 0) {
@@ -207,92 +301,16 @@ struct ChatView: View {
         }
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingModelSelector) {
-            ModelSelectorSheet(selectedModel: $viewModel.currentModel)
-        }
-        .sheet(isPresented: $showingCompareSheet) {
+    }
+
+    private struct ComparisonSheetContent: View {
+        @Binding var selectedModel: ModelSnapshot?
+
+        var body: some View {
             NavigationStack {
-                ModelComparisonSheet(primaryModel: $viewModel.currentModel)
+                ModelComparisonSheet(primaryModel: $selectedModel)
             }
             .presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $showingParameters) {
-            NavigationStack {
-                parametersFormContent
-            }
-        }
-        .task {
-            await modelStore.refresh()
-            syncCurrentModelSelection()
-            let settings = AppSettings.shared
-            paramTemperature = settings.defaultTemperature
-            paramTopP = settings.defaultTopP
-            paramTopK = settings.defaultTopK
-            paramRepeatPenalty = settings.defaultRepeatPenalty
-            paramMaxTokens = settings.maxTokens
-        }
-        .onDisappear {
-            if isRecording {
-                isRecording = false
-            }
-            recognitionTask?.cancel()
-            recognitionTask = nil
-            speechAudioEngine?.stop()
-            speechAudioEngine = nil
-            speechRequest?.endAudio()
-            speechRequest = nil
-        }
-        .onChange(of: downloadedModelRevision) { _, _ in
-            syncCurrentModelSelection()
-        }
-        .onChange(of: viewModel.currentModel?.id) { _, _ in
-            if let selectedModel = viewModel.currentModel {
-                session.modelId = selectedModel.persistentReference
-                session.updatedAt = Date()
-                try? modelContext.save()
-            } else if !session.modelId.isEmpty {
-                session.modelId = ""
-                session.updatedAt = Date()
-                try? modelContext.save()
-            }
-        }
-        .alert("Chat Error", isPresented: Binding(
-            get: { viewModel.errorMessage != nil },
-            set: { if !$0 { viewModel.errorMessage = nil } }
-        )) {
-            Button("Retry") {
-                let lastMsg = viewModel.lastSentMessage
-                viewModel.errorMessage = nil
-                if !lastMsg.isEmpty {
-                    Task { await viewModel.sendMessage(lastMsg, in: session, context: modelContext) }
-                }
-            }
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(viewModel.errorMessage ?? "")
-        }
-        .alert("Voice Input Error", isPresented: Binding(
-            get: { voiceInput.errorMessage != nil },
-            set: { if !$0 { voiceInput.errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(voiceInput.errorMessage ?? "")
-        }
-        .alert("Rename Chat", isPresented: $showingRenameDialog) {
-            TextField("Chat Title", text: $pendingTitle)
-            Button("Save") {
-                let trimmed = pendingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    session.title = trimmed
-                    session.updatedAt = Date()
-                    try? modelContext.save()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .onDisappear {
-            voiceInput.stopRecording()
         }
     }
 
