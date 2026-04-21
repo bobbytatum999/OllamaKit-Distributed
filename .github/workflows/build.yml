@@ -28,7 +28,8 @@ permissions:
 
 env:
   
-  LLAMA_CPP_TAG: "b8548"
+  # Gemma 4 support requires b8641+ (b8783 includes template fixes + audio encoder)
+  LLAMA_CPP_TAG: "b8783"
   CONFIGURATION: ${{ (github.event_name == 'workflow_dispatch' && inputs.build_type == 'debug') && 'Debug' || 'Release' }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
