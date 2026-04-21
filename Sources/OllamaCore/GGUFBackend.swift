@@ -60,16 +60,14 @@ final class GGUFBackend: InferenceBackend, @unchecked Sendable {
         let configuration = BackendConfiguration(
             catalogId: entry.catalogId,
             modelPath: path,
-            // Keep validation well below normal chat settings so borderline models
-            // fail safely instead of exhausting memory just to answer "can this load?".
-            contextLength: min(runtime.contextLength, 1024),
-            gpuLayers: max(runtime.gpuLayers, 0),
-            threads: min(runtime.threads, 2), // Limit threads during validation
-            batchSize: 16, // Use minimal batch size for validation
-            kvCachePreset: .platformDefault,
-            flashAttentionEnabled: false, // Disable flash attention for validation
-            mmapEnabled: true, // Use mmap to reduce memory pressure
-            mlockEnabled: false, // Disable mlock during validation
+            contextLength: runtime.contextLength,
+            gpuLayers: runtime.gpuLayers,
+            threads: runtime.threads,
+            batchSize: runtime.batchSize,
+            kvCachePreset: runtime.kvCachePreset,
+            flashAttentionEnabled: runtime.flashAttentionEnabled,
+            mmapEnabled: runtime.mmapEnabled,
+            mlockEnabled: runtime.mlockEnabled,
             turboQuantMode: runtime.turboQuantMode,
             kvCacheTypeK: runtime.kvCacheTypeK,
             kvCacheTypeV: runtime.kvCacheTypeV
@@ -453,6 +451,7 @@ private final class BackendEngine {
         contextParams.no_perf = false
         Self.applyKVCachePreset(configuration.kvCachePreset, to: &contextParams)
 
+
         #if targetEnvironment(simulator)
         contextParams.offload_kqv = false
         contextParams.op_offload = false
@@ -491,6 +490,7 @@ private final class BackendEngine {
     }
 
     private static func applyKVCachePreset(_ preset: RuntimePreferences.KVCachePreset, to params: inout llama_context_params) {
+
         switch preset {
         case .platformDefault:
             break

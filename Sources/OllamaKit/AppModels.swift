@@ -442,6 +442,7 @@ final class ModelPerformanceStore: ObservableObject {
     }
 }
 
+
 @Model
 final class DownloadedModel {
     var id: UUID

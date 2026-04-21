@@ -38,6 +38,16 @@ final class ModelRunner: ObservableObject {
         let loadStart = CFAbsoluteTimeGetCurrent()
         let resolvedGpuLayers = await MainActor.run { gpuLayers ?? AppSettings.shared.gpuLayers }
         let resolvedKvCachePreset = await MainActor.run { AppSettings.shared.kvCachePreset.rawValue }
+
+        let snapshot = await ModelStorage.shared.snapshot(name: catalogId)
+        let (settings, backendKind, isValidated, validationSummary) = await MainActor.run {
+            (
+                AppSettings.shared,
+                snapshot?.backendKind,
+                snapshot?.isValidatedRunnable,
+                snapshot?.validationSummary
+            )
+        }
         await MainActor.run {
             AppLogStore.shared.record(
                 .model,
@@ -46,78 +56,57 @@ final class ModelRunner: ObservableObject {
                 metadata: [
                     "catalog_id": catalogId,
                     "context_length": "\(max(contextLength, 512))",
-                    "gpu_layers": "\(resolvedGpuLayers)",
-                    "kv_cache_preset": resolvedKvCachePreset
+                    "gpu_layers": "\(gpuLayers ?? settings.gpuLayers)",
+                    "kv_cache_preset": settings.kvCachePreset.rawValue
                 ]
             )
         }
-        let (settings_gpuLayers, settings_threads, settings_batchSize, settings_kvCachePreset,
-             settings_flashAttention, settings_mmap, settings_mlock, settings_keepInMemory,
-             settings_autoOffload, settings_turboQuant, settings_kvCacheTypeK, settings_kvCacheTypeV) = await MainActor.run {
-            let s = AppSettings.shared
-            return (gpuLayers ?? s.gpuLayers, s.threads, s.batchSize, s.kvCachePreset,
-                    s.flashAttentionEnabled, s.mmapEnabled, s.mlockEnabled,
-                    s.keepModelInMemory, s.autoOffloadMinutes, s.turboQuantMode,
-                    s.kvCacheTypeK, s.kvCacheTypeV)
+        if let snapshot = snapshot,
+           backendKind == .ggufLlama,
+           !(isValidated ?? false)
+        {
+            let refreshedSnapshot = await ModelStorage.shared.validateModel(catalogId: snapshot.catalogId) ?? snapshot
+            let refreshedIsRunnable = await MainActor.run { refreshedSnapshot.isValidatedRunnable }
+            guard refreshedIsRunnable else {
+                let summary = await MainActor.run { refreshedSnapshot.validationSummary }
+                throw ModelError.backendUnavailable(
+                    summary ?? "This GGUF model failed validation on this device and cannot be loaded for chat."
+                )
+            }
+
         }
 
-        let runtime = RuntimePreferences(
-            contextLength: max(contextLength, 512),
-            gpuLayers: settings_gpuLayers,
-            threads: settings_threads,
-            batchSize: settings_batchSize,
-            flashAttentionEnabled: settings_flashAttention,
-            mmapEnabled: settings_mmap,
-            mlockEnabled: settings_mlock,
-            turboQuantMode: settings_turboQuant,
-            kvCacheTypeK: settings_kvCacheTypeK,
-            kvCacheTypeV: settings_kvCacheTypeV,
-            keepModelInMemory: settings_keepInMemory,
-            autoOffloadMinutes: settings_autoOffload
-        )
-
-        do {
-            let entry = try await RuntimeCoordinator.shared.loadModel(
-                catalogId: catalogId,
-                runtime: runtime
+        let runtime = await MainActor.run {
+            RuntimePreferences(
+                contextLength: max(contextLength, 512),
+                gpuLayers: gpuLayers ?? settings.gpuLayers,
+                threads: settings.threads,
+                batchSize: settings.batchSize,
+                kvCachePreset: settings.kvCachePreset,
+                flashAttentionEnabled: settings.flashAttentionEnabled,
+                mmapEnabled: settings.mmapEnabled,
+                mlockEnabled: settings.mlockEnabled,
+                keepModelInMemory: settings.keepModelInMemory,
+                autoOffloadMinutes: settings.autoOffloadMinutes
             )
-            if entry.backendKind == .ggufLlama {
-                _ = try? await ModelRegistryStore.shared.updateValidation(
-                    catalogId: entry.catalogId,
-                    outcome: ModelValidationOutcome(
-                        status: .validated,
-                        message: "Loaded successfully on this device with the current runtime settings."
-                    )
-                )
-                await ModelStorage.shared.refresh()
-            }
-            await updateActiveState(from: entry)
+        }
 
-            let elapsedMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
-            await MainActor.run {
-                ModelPerformanceStore.shared.record(
-                    ModelPerformanceSample(
-                        modelID: catalogId,
-                        phase: .load,
-                        elapsedMs: elapsedMs,
-                        wasSuccessful: true
-                    )
-                )
-            }
-        } catch {
-            let elapsedMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
-            await MainActor.run {
-                ModelPerformanceStore.shared.record(
-                    ModelPerformanceSample(
-                        modelID: catalogId,
-                        phase: .load,
-                        elapsedMs: elapsedMs,
-                        wasSuccessful: false,
-                        notes: error.localizedDescription
-                    )
-                )
-            }
-            throw error
+        let entry = try await RuntimeCoordinator.shared.loadModel(
+            catalogId: catalogId,
+            runtime: runtime
+        )
+        await updateActiveState(from: entry)
+        await MainActor.run {
+            AppLogStore.shared.record(
+                .model,
+                title: "Load Completed",
+                message: "Model loaded successfully.",
+                metadata: [
+                    "catalog_id": catalogId,
+                    "resolved_path": entry.localPath ?? ""
+                ]
+            )
+
         }
     }
 
@@ -230,6 +219,7 @@ final class ModelRunner: ObservableObject {
                     notes: result.wasCancelled ? "cancelled" : nil
                 ))
         }
+
         await MainActor.run {
             AppLogStore.shared.record(
                 .model,

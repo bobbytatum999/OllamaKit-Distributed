@@ -440,14 +440,15 @@ struct ChatView: View {
         // Encode selected images as base64 data
         let imageDataArray = selectedImages.compactMap { $0.jpegData(compressionQuality: 0.8) }
 
+
         AppLogStore.shared.record(
             .chat,
             title: "User Message Queued",
             message: "Queued a new user message for generation.",
             metadata: [
                 "session_id": session.id.uuidString,
-                "chars": "\(content.count)",
-                "images": "\(imageDataArray.count)"
+                "chars": "\(content.count)"
+
             ],
             body: content
         )
@@ -632,7 +633,6 @@ struct ChatView: View {
 
         return voiceInput.isRecording ? .red : .secondary
     }
-
     private func toggleVoiceInput() {
         if voiceInput.isRecording {
             voiceInput.stopRecording()

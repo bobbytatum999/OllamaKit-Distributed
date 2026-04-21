@@ -42,6 +42,7 @@ struct SettingsView: View {
                         ThermalMonitorSection()
                     }
 
+
                     SurfaceSectionCard(title: "Memory Management", icon: "memorychip") {
                         MemorySettingsSection(settings: settings)
                     }
@@ -54,7 +55,7 @@ struct SettingsView: View {
                         HuggingFaceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Interface") {
+                    SurfaceSectionCard(title: "Interface", icon: "paintpalette") {
                         InterfaceSettingsSection(settings: settings)
                     }
 
@@ -83,6 +84,7 @@ struct SettingsView: View {
                     SurfaceSectionCard(title: "Interface", icon: "paintpalette") {
                         InterfaceSettingsSection(settings: settings)
                     }
+
 
                     SurfaceSectionCard(title: "Data Management", icon: "externaldrive") {
                         DataManagementSection()
@@ -1010,6 +1012,7 @@ struct BenchmarkSection: View {
         }
     }
 }
+
 
 struct AppActivityLogsSection: View {
     @ObservedObject private var logStore = AppLogStore.shared
