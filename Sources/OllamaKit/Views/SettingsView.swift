@@ -509,7 +509,6 @@ struct MemorySettingsSection: View {
         }
     }
 }
-}
 
 struct HuggingFaceSettingsSection: View {
     @ObservedObject var settings: AppSettings
