@@ -931,7 +931,7 @@ struct ModelPerformanceSection: View {
 }
 
 struct BenchmarkSection: View {
-    @State private var runToken = 0
+    @State private var benchmarkTask: Task<Void, Never>?
     @State private var isRunning = false
     @State private var status = "Idle"
     @State private var resultLine = ""
@@ -944,16 +944,22 @@ struct BenchmarkSection: View {
                     .font(.system(size: 16, weight: .medium))
                 Spacer()
                 Button(isRunning ? "Running…" : "Run") {
-                    guard !isRunning else { return }
-                    runToken += 1
+                    startBenchmark()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isRunning)
             }
 
-            Text(status)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                if isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                Text(status)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
 
             if !resultLine.isEmpty {
                 Text(resultLine)
@@ -968,9 +974,9 @@ struct BenchmarkSection: View {
             }
         }
         .padding(.vertical, 12)
-        .task(id: runToken) {
-            guard runToken > 0 else { return }
-            await runBenchmark()
+        .onDisappear {
+            benchmarkTask?.cancel()
+            benchmarkTask = nil
         }
     }
 
@@ -980,17 +986,29 @@ struct BenchmarkSection: View {
         status = "Refreshing models…"
         resultLine = ""
         errorLine = ""
-        defer { isRunning = false }
+        defer {
+            isRunning = false
+            benchmarkTask = nil
+        }
 
         await ModelStorage.shared.refresh()
-        let candidates = ModelStorage.shared.selectionSnapshots
-            .filter { $0.canBeSelectedForChat && $0.isValidatedRunnable }
-            .sorted { $0.size < $1.size }
+        let candidates = BuiltInModelCatalog.selectionModels(downloadedModels: ModelStorage.shared.selectionSnapshots)
+            .filter(\.canBeSelectedForChat)
 
-        guard let model = candidates.first else {
-            status = "No runnable model available."
+        guard let model = resolveBenchmarkCandidate(from: candidates) else {
+            status = "Load or download a model first."
             return
         }
+
+        AppLogStore.shared.record(
+            .settings,
+            title: "Benchmark Started",
+            message: "Running the quick benchmark.",
+            metadata: [
+                "model_id": model.catalogId,
+                "validated_runnable": String(model.isValidatedRunnable)
+            ]
+        )
 
         do {
             status = "Loading \(model.displayName)…"
@@ -1027,10 +1045,62 @@ struct BenchmarkSection: View {
                 result.tokensGenerated,
                 tokPerSec
             )
+            AppLogStore.shared.record(
+                .settings,
+                title: "Benchmark Complete",
+                message: "Quick benchmark finished successfully.",
+                metadata: [
+                    "model_id": model.catalogId,
+                    "tokens": "\(result.tokensGenerated)",
+                    "tokens_per_second": String(format: "%.1f", tokPerSec)
+                ]
+            )
+        } catch is CancellationError {
+            status = "Benchmark cancelled."
         } catch {
             status = "Benchmark failed."
             errorLine = error.localizedDescription
+            AppLogStore.shared.record(
+                .settings,
+                level: .error,
+                title: "Benchmark Failed",
+                message: "Quick benchmark failed.",
+                metadata: ["model_id": model.catalogId],
+                body: error.localizedDescription
+            )
         }
+    }
+
+    @MainActor
+    private func startBenchmark() {
+        guard !isRunning else { return }
+        benchmarkTask?.cancel()
+        benchmarkTask = Task {
+            await runBenchmark()
+        }
+    }
+
+    @MainActor
+    private func resolveBenchmarkCandidate(from candidates: [ModelSnapshot]) -> ModelSnapshot? {
+        guard !candidates.isEmpty else { return nil }
+
+        if let activeCatalogId = ModelRunner.shared.activeCatalogId,
+           let activeModel = ModelSnapshot.resolveStoredReference(activeCatalogId, in: candidates) {
+            return activeModel
+        }
+
+        if let defaultModelID = AppSettings.shared.defaultModelId.nonEmpty,
+           let defaultModel = ModelSnapshot.resolveStoredReference(defaultModelID, in: candidates) {
+            return defaultModel
+        }
+
+        if let validatedCandidate = candidates
+            .filter(\.isValidatedRunnable)
+            .min(by: { $0.size < $1.size }) {
+            return validatedCandidate
+        }
+
+        return candidates.min(by: { $0.size < $1.size })
     }
 }
 

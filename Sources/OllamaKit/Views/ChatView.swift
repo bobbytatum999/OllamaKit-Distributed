@@ -1,8 +1,6 @@
 import SwiftUI
 import SwiftData
 import OllamaCore
-import AVFoundation
-import Speech
 import PhotosUI
 
 struct ChatView: View {
@@ -32,13 +30,6 @@ struct ChatView: View {
     @State private var compareResponse2 = ""
     @State private var isComparing = false
     @State private var showingCompareSheet = false
-    @State private var isRecording = false
-    @State private var speechRecognizer: SFSpeechRecognizer? = SFSpeechRecognizer(locale: .current)
-    // FIX: Store recognition Task so it can be cancelled on view disappear.
-    // Previously no onDisappear cleanup existed, so the Task ran indefinitely.
-    @State private var recognitionTask: Task<Void, Never>?
-    @State private var speechRequest: SFSpeechAudioBufferRecognitionRequest?
-    @State private var speechAudioEngine: AVAudioEngine?
     
     @Namespace private var scrollID
 
@@ -235,15 +226,6 @@ struct ChatView: View {
                 paramMaxTokens = settings.maxTokens
             }
             .onDisappear {
-                if isRecording {
-                    isRecording = false
-                }
-                recognitionTask?.cancel()
-                recognitionTask = nil
-                speechAudioEngine?.stop()
-                speechAudioEngine = nil
-                speechRequest?.endAudio()
-                speechRequest = nil
                 voiceInput.stopRecording()
             }
             .onChange(of: downloadedModelRevision) { _, _ in
@@ -473,98 +455,6 @@ struct ChatView: View {
                 ),
                 imageData: imageDataArray.isEmpty ? nil : imageDataArray
             )
-        }
-    }
-
-    private func toggleRecording() {
-        if isRecording {
-            isRecording = false
-            Task { @MainActor in
-                HapticManager.impact(.medium)
-            }
-        } else {
-            requestSpeechPermission()
-        }
-    }
-
-    private func requestSpeechPermission() {
-        SFSpeechRecognizer.requestAuthorization { [self] status in
-            Task { @MainActor in
-                switch status {
-                case .authorized:
-                    startSpeechRecognition()
-                case .denied, .restricted:
-                    HapticManager.notification(.error)
-                case .notDetermined:
-                    HapticManager.notification(.warning)
-                @unknown default:
-                    break
-                }
-            }
-        }
-    }
-
-    private func startSpeechRecognition() {
-        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
-            Task { @MainActor in
-                HapticManager.notification(.error)
-            }
-            return
-        }
-
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        speechRequest = request
-
-        let audioEngine = AVAudioEngine()
-        speechAudioEngine = audioEngine
-        let inputNode = audioEngine.inputNode
-
-        isRecording = true
-        Task { @MainActor in
-            HapticManager.impact(.light)
-        }
-
-        // FIX: Store Task so it can be cancelled on view disappear.
-        // Previously no cleanup existed — Task ran indefinitely after view disappeared.
-        recognitionTask = Task {
-            var lastTranscription = ""
-            let stream = recognizer.recognitionTask(with: request) { [self] result, error in
-                if Task.isCancelled { return }
-                if let result = result {
-                    let transcription = result.bestTranscription.formattedString
-                    Task { @MainActor in
-                        messageText = lastTranscription + transcription
-                    }
-                }
-                if error != nil || result?.isFinal == true {
-                    lastTranscription = messageText + " "
-                }
-            }
-
-            let recordingFormat = inputNode.outputFormat(forBus: 0)
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-                request.append(buffer)
-            }
-
-            audioEngine.prepare()
-            try? audioEngine.start()
-
-            // Wait for isRecording to become false (user stopped or view disappeared)
-            while isRecording && !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-
-            if !Task.isCancelled {
-                audioEngine.stop()
-                inputNode.removeTap(onBus: 0)
-                stream.cancel()
-                request.endAudio()
-            }
-
-            Task { @MainActor in
-                HapticManager.impact(.medium)
-            }
         }
     }
 

@@ -1,9 +1,6 @@
-import SwiftUI
-import SwiftData
 import OllamaCore
 import AVFoundation
 import Speech
-import PhotosUI
 
 final class VoiceInputController: NSObject, ObservableObject {
     @Published var isRecording = false
@@ -22,7 +19,7 @@ final class VoiceInputController: NSObject, ObservableObject {
                 try configureAndStartRecognition(onTranscript: onTranscript)
             } catch {
                 stopRecording()
-                errorMessage = error.localizedDescription
+                errorMessage = friendlyErrorMessage(for: error)
             }
         }
     }
@@ -83,8 +80,14 @@ final class VoiceInputController: NSObject, ObservableObject {
 
     private func requestMicrophonePermission() async -> Bool {
         await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                continuation.resume(returning: granted)
+            if #available(iOS 17.0, *) {
+                AVAudioApplication.requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
+            } else {
+                AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
             }
         }
     }
@@ -93,7 +96,11 @@ final class VoiceInputController: NSObject, ObservableObject {
         stopRecording()
 
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.record, mode: .measurement, options: [.duckOthers])
+        try audioSession.setCategory(
+            .playAndRecord,
+            mode: .measurement,
+            options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP]
+        )
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -133,10 +140,21 @@ final class VoiceInputController: NSObject, ObservableObject {
             if let error {
                 Task { @MainActor in
                     self.stopRecording()
-                    self.errorMessage = error.localizedDescription
+                    self.errorMessage = self.friendlyErrorMessage(for: error)
                 }
             }
         }
+    }
+
+    private func friendlyErrorMessage(for error: Error) -> String {
+        let nsError = error as NSError
+
+        if nsError.code == 1_852_797_029 {
+            return "Voice input couldn't start because audio capture is unavailable right now. Stop other recording apps or reconnect your audio device, then try again."
+        }
+
+        let message = nsError.localizedDescription.trimmedForLookup
+        return message.isEmpty ? "Voice input failed to start." : message
     }
 }
 

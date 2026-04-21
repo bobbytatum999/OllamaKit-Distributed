@@ -8,11 +8,23 @@ struct CreateAutomationView: View {
 
     @State private var inputText = ""
     @State private var isGenerating = false
+    @State private var planningPhase: AutomationPlanningPhase = .idle
     @State private var generatedAutomation: ParsedAutomation?
+    @State private var rawPlanJSON = ""
     @State private var errorMessage: String?
     @State private var showingError = false
 
-    private let systemPrompt = "You are an automation planner. Respond ONLY with valid JSON. No markdown, no explanation, just the raw JSON object with this exact structure: {\"name\": string, \"triggerType\": \"manual\"|\"cron\"|\"webhook\", \"cronSchedule\": string|null, \"steps\": [{\"service\": \"llm\"|\"http\"|\"notify\", \"action\": string, \"params\": {}, \"outputKey\": string}]}"
+    private let systemPrompt = """
+    You are an automation planner.
+    Return exactly one JSON object and nothing else.
+    Never wrap the JSON in markdown.
+    Every step must include service, action, params, and outputKey.
+    Use an empty string for outputKey when a step does not expose output.
+    Valid services are llm, http, and notify.
+    Valid triggerType values are manual, cron, and webhook.
+    Use this exact shape:
+    {"name": string, "triggerType": "manual"|"cron"|"webhook", "cronSchedule": string|null, "steps": [{"service": "llm"|"http"|"notify", "action": string, "params": {}, "outputKey": string}]}
+    """
 
     var body: some View {
         NavigationStack {
@@ -64,9 +76,18 @@ struct CreateAutomationView: View {
                             }
                             .padding(.horizontal, 16)
 
+                            if isGenerating {
+                                AutomationPlanningProgressCard(phase: planningPhase)
+                                    .padding(.horizontal, 16)
+                            }
+
                             // Generated preview
                             if let automation = generatedAutomation {
-                                AutomationPreviewCard(automation: automation, errorMessage: errorMessage)
+                                AutomationPreviewCard(
+                                    automation: automation,
+                                    rawPlanJSON: rawPlanJSON,
+                                    errorMessage: errorMessage
+                                )
                                     .padding(.horizontal, 16)
                             }
                         }
@@ -146,112 +167,89 @@ struct CreateAutomationView: View {
         "Summarize my chat history and save to notes"
     ]
 
+    @MainActor
     private func generateAutomation() async {
         let prompt = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
 
         isGenerating = true
+        planningPhase = .generatingPlan
         generatedAutomation = nil
+        rawPlanJSON = ""
         errorMessage = nil
+        showingError = false
+
+        AppLogStore.shared.record(
+            .app,
+            title: "Automation Planning Started",
+            message: "Generating a new automation plan.",
+            metadata: ["prompt_length": "\(prompt.count)"]
+        )
 
         do {
-            let content = try await AutomationRunner.shared.planAutomation(
+            let content = try await planAutomationWithTimeout(
                 prompt: prompt,
                 systemPrompt: systemPrompt
             )
 
-            // Try multiple strategies to extract valid JSON from the LLM response
-            let extractionResult = extractJSON(from: content)
+            planningPhase = .validatingJSON
+            let extractionResult = AutomationPlanParser.extractJSON(from: content)
 
             switch extractionResult {
-            case .success(let jsonData):
+            case .success(let jsonData, let strategy):
+                rawPlanJSON = String(data: jsonData, encoding: .utf8) ?? ""
+                planningPhase = .repairingSchema
                 do {
                     let parsed = try JSONDecoder().decode(ParsedAutomation.self, from: jsonData)
-                    await MainActor.run {
-                        generatedAutomation = parsed
-                        isGenerating = false
-                        HapticManager.impact(.light)
-                    }
+                    generatedAutomation = parsed
+                    planningPhase = .readyToReview
+                    isGenerating = false
+                    AppLogStore.shared.record(
+                        .app,
+                        title: "Automation Plan Ready",
+                        message: "Generated automation plan is ready for review.",
+                        metadata: [
+                            "steps": "\(parsed.steps.count)",
+                            "extraction_strategy": strategy.rawValue
+                        ],
+                        body: rawPlanJSON
+                    )
+                    HapticManager.impact(.light)
                 } catch let decodeError as DecodingError {
-                    // Detailed decoding error - log everything for debugging
                     let errorDetails = detailedDecodingError(decodeError)
-                    await MainActor.run {
-                        logAutomationParseFailure(content: content, strategy: "JSONDecoder", error: errorDetails)
-                        errorMessage = "Failed to parse automation plan. \(errorDetails)"
-                        showingError = true
-                        isGenerating = false
-                    }
+                    logAutomationParseFailure(content: content, strategy: "JSONDecoder", error: errorDetails)
+                    errorMessage = "Failed to parse automation plan. \(errorDetails)"
+                    showingError = true
+                    planningPhase = .failed
+                    isGenerating = false
+                } catch let validationError as AutomationPlanValidationError {
+                    let errorDetails = validationError.localizedDescription
+                    logAutomationParseFailure(content: content, strategy: "normalization", error: errorDetails)
+                    errorMessage = "Failed to parse automation plan. \(errorDetails)"
+                    showingError = true
+                    planningPhase = .failed
+                    isGenerating = false
                 } catch {
-                    await MainActor.run {
-                        logAutomationParseFailure(content: content, strategy: "JSONDecoder", error: error.localizedDescription)
-                        errorMessage = "Failed to parse automation plan: \(error.localizedDescription)"
-                        showingError = true
-                        isGenerating = false
-                    }
+                    logAutomationParseFailure(content: content, strategy: "JSONDecoder", error: error.localizedDescription)
+                    errorMessage = "Failed to parse automation plan: \(error.localizedDescription)"
+                    showingError = true
+                    planningPhase = .failed
+                    isGenerating = false
                 }
 
             case .failure(let extractionError):
-                await MainActor.run {
-                    logAutomationParseFailure(content: content, strategy: "extraction", error: extractionError)
-                    errorMessage = "Failed to parse automation plan. \(extractionError)"
-                    showingError = true
-                    isGenerating = false
-                }
-            }
-        } catch {
-            await MainActor.run {
-                errorMessage = error.localizedDescription
+                logAutomationParseFailure(content: content, strategy: "extraction", error: extractionError)
+                errorMessage = "Failed to parse automation plan. \(extractionError)"
                 showingError = true
+                planningPhase = .failed
                 isGenerating = false
             }
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
+            planningPhase = .failed
+            isGenerating = false
         }
-    }
-
-    // MARK: - JSON Extraction
-
-    private enum JSONExtractionResult {
-        case success(Data)
-        case failure(String)
-    }
-
-    /// Attempts to extract valid JSON from an LLM response using multiple strategies.
-    private func extractJSON(from content: String) -> JSONExtractionResult {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Strategy 1: Strip markdown code block with language tag (e.g. ```json ... ```)
-        if trimmed.hasPrefix("```") {
-            var withoutOpening = trimmed
-            if let firstNewline = withoutOpening.firstIndex(of: "\n") {
-                withoutOpening = String(withoutOpening[withoutOpening.index(after: firstNewline)...])
-            }
-            withoutOpening = withoutOpening.trimmingCharacters(in: .whitespacesAndNewlines)
-            if withoutOpening.hasSuffix("```") {
-                withoutOpening = String(withoutOpening.dropLast(3))
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            if let data = withoutOpening.data(using: .utf8),
-               JSONSerialization.isValidJSONObject(try? JSONSerialization.jsonObject(with: data)) {
-                return .success(data)
-            }
-        }
-
-        // Strategy 2: Find the first '{' and last '}' to handle text around JSON
-        if let firstBrace = trimmed.firstIndex(of: "{"),
-           let lastBrace = trimmed.lastIndex(of: "}") {
-            let potentialJSON = String(trimmed[firstBrace...lastBrace])
-            if let data = potentialJSON.data(using: .utf8),
-               JSONSerialization.isValidJSONObject(try? JSONSerialization.jsonObject(with: data)) {
-                return .success(data)
-            }
-        }
-
-        // Strategy 3: Try the raw trimmed content as-is
-        if let data = trimmed.data(using: .utf8),
-           JSONSerialization.isValidJSONObject(try? JSONSerialization.jsonObject(with: data)) {
-            return .success(data)
-        }
-
-        return .failure("The model response did not contain valid JSON. Tried: markdown code block stripping, brace extraction, and raw parsing.")
     }
 
     /// Converts a DecodingError into a human-readable diagnostic string.
@@ -290,11 +288,39 @@ struct CreateAutomationView: View {
         )
     }
 
+    private func planAutomationWithTimeout(
+        prompt: String,
+        systemPrompt: String,
+        timeoutSeconds: UInt64 = 30
+    ) async throws -> String {
+        let timeoutNanoseconds = timeoutSeconds * 1_000_000_000
+
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask {
+                try await AutomationRunner.shared.planAutomation(
+                    prompt: prompt,
+                    systemPrompt: systemPrompt
+                )
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                throw AutomationPlanningTimeoutError(seconds: Int(timeoutSeconds))
+            }
+
+            guard let firstResult = try await group.next() else {
+                throw AutomationPlanningTimeoutError(seconds: Int(timeoutSeconds))
+            }
+
+            group.cancelAll()
+            return firstResult
+        }
+    }
+
     private func saveAutomation() {
         guard let automation = generatedAutomation else { return }
 
-        let steps: [AutomationCoreStep] = automation.steps.map { step in
-            AutomationCoreStep(
+        let steps: [AutomationStep] = automation.steps.map { step in
+            AutomationStep(
                 service: step.service,
                 action: step.action,
                 params: step.params,
@@ -324,43 +350,391 @@ struct CreateAutomationView: View {
     }
 }
 
-// Rename to avoid conflict with the one in AppModels.swift
-public struct AutomationCoreStep: Codable, Identifiable {
-    public var id: String
-    public var service: String
-    public var action: String
-    public var params: [String: String]
-    public var outputKey: String
+private struct AutomationPlanningTimeoutError: LocalizedError {
+    let seconds: Int
 
-    public init(id: String = UUID().uuidString, service: String, action: String, params: [String: String] = [:], outputKey: String = "") {
-        self.id = id
-        self.service = service
-        self.action = action
-        self.params = params
-        self.outputKey = outputKey
+    var errorDescription: String? {
+        "Automation planning timed out after \(seconds) seconds. Try again or simplify the request."
     }
 }
 
-struct ParsedAutomation: Codable {
+private enum AutomationPlanningPhase {
+    case idle
+    case generatingPlan
+    case validatingJSON
+    case repairingSchema
+    case readyToReview
+    case failed
+
+    var title: String {
+        switch self {
+        case .idle:
+            return "Ready to plan"
+        case .generatingPlan:
+            return "Generating plan"
+        case .validatingJSON:
+            return "Validating JSON"
+        case .repairingSchema:
+            return "Repairing schema"
+        case .readyToReview:
+            return "Ready to review"
+        case .failed:
+            return "Planning failed"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .idle:
+            return "Describe an automation in plain English to generate a plan."
+        case .generatingPlan:
+            return "Running the model and waiting for an automation plan."
+        case .validatingJSON:
+            return "Checking the planner output for valid JSON."
+        case .repairingSchema:
+            return "Normalizing missing fields and preparing a reviewable plan."
+        case .readyToReview:
+            return "The plan is ready to review and save."
+        case .failed:
+            return "The last attempt did not produce a usable automation."
+        }
+    }
+}
+
+private struct AutomationPlanningProgressCard: View {
+    let phase: AutomationPlanningPhase
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ProgressView()
+                .controlSize(.regular)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(phase.title)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(phase.detail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 0.6)
+                )
+        )
+    }
+}
+
+private enum AutomationPlanValidationError: LocalizedError {
+    case missingSteps
+
+    var errorDescription: String? {
+        switch self {
+        case .missingSteps:
+            return "The generated automation did not include any executable steps."
+        }
+    }
+}
+
+private enum AutomationPlanExtractionStrategy: String {
+    case markdownCodeBlock = "markdown_code_block"
+    case braceExtraction = "brace_extraction"
+    case rawJSON = "raw_json"
+}
+
+private enum AutomationPlanExtractionResult {
+    case success(Data, AutomationPlanExtractionStrategy)
+    case failure(String)
+}
+
+private enum AutomationPlanParser {
+    static func extractJSON(from content: String) -> AutomationPlanExtractionResult {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.hasPrefix("```") {
+            var withoutOpening = trimmed
+            if let firstNewline = withoutOpening.firstIndex(of: "\n") {
+                withoutOpening = String(withoutOpening[withoutOpening.index(after: firstNewline)...])
+            }
+            withoutOpening = withoutOpening.trimmingCharacters(in: .whitespacesAndNewlines)
+            if withoutOpening.hasSuffix("```") {
+                withoutOpening = String(withoutOpening.dropLast(3))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let data = validatedJSONData(from: withoutOpening) {
+                return .success(data, .markdownCodeBlock)
+            }
+        }
+
+        if let firstBrace = trimmed.firstIndex(of: "{"),
+           let lastBrace = trimmed.lastIndex(of: "}") {
+            let candidate = String(trimmed[firstBrace...lastBrace])
+            if let data = validatedJSONData(from: candidate) {
+                return .success(data, .braceExtraction)
+            }
+        }
+
+        if let data = validatedJSONData(from: trimmed) {
+            return .success(data, .rawJSON)
+        }
+
+        return .failure("The model response did not contain valid JSON. Tried: markdown code block stripping, brace extraction, and raw parsing.")
+    }
+
+    private static func validatedJSONData(from string: String) -> Data? {
+        guard let data = string.data(using: .utf8) else { return nil }
+        do {
+            _ = try JSONSerialization.jsonObject(with: data)
+            return data
+        } catch {
+            return nil
+        }
+    }
+}
+
+private struct ParsedAutomation: Decodable {
     let name: String
     let triggerType: String
     let cronSchedule: String?
     let steps: [ParsedStep]
 
     enum CodingKeys: String, CodingKey {
-        case name, triggerType, cronSchedule, steps
+        case name
+        case triggerType
+        case cronSchedule
+        case steps
+    }
+
+    init(name: String, triggerType: String, cronSchedule: String?, steps: [ParsedStep]) {
+        self.name = name
+        self.triggerType = triggerType
+        self.cronSchedule = cronSchedule
+        self.steps = steps
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        let name = try container.decodeIfPresent(String.self, forKey: .name)?.trimmedForLookup.nonEmpty ?? "New Automation"
+        let triggerType = Self.normalizeTriggerType(
+            try container.decodeIfPresent(String.self, forKey: .triggerType)
+        )
+        let cronSchedule = try container.decodeIfPresent(String.self, forKey: .cronSchedule)?.trimmedForLookup.nonEmpty
+        let decodedSteps = try container.decodeIfPresent([ParsedStep].self, forKey: .steps) ?? []
+        let normalizedSteps = decodedSteps.enumerated().map { index, step in
+            step.normalized(fallbackIndex: index)
+        }
+
+        guard !normalizedSteps.isEmpty else {
+            throw AutomationPlanValidationError.missingSteps
+        }
+
+        self.init(
+            name: name,
+            triggerType: triggerType,
+            cronSchedule: cronSchedule,
+            steps: normalizedSteps
+        )
+    }
+
+    private static func normalizeTriggerType(_ rawValue: String?) -> String {
+        switch rawValue?.trimmedForLookup.lowercased() {
+        case "cron", "schedule", "scheduled":
+            return "cron"
+        case "webhook", "http":
+            return "webhook"
+        default:
+            return "manual"
+        }
     }
 }
 
-struct ParsedStep: Codable {
+private struct ParsedStep: Decodable {
     let service: String
     let action: String
     let params: [String: String]
     let outputKey: String
+
+    enum CodingKeys: String, CodingKey {
+        case service
+        case action
+        case params
+        case outputKey
+    }
+
+    init(service: String, action: String, params: [String: String], outputKey: String) {
+        self.service = service
+        self.action = action
+        self.params = params
+        self.outputKey = outputKey
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let service = Self.normalizeService(
+            try container.decodeIfPresent(String.self, forKey: .service)
+        )
+        let action = try container.decodeIfPresent(String.self, forKey: .action)?.trimmedForLookup.nonEmpty
+            ?? Self.defaultAction(for: service)
+        let rawParams = try container.decodeIfPresent([String: FlexibleStringValue].self, forKey: .params) ?? [:]
+        let params = rawParams.reduce(into: [String: String]()) { partialResult, entry in
+            let key = entry.key.trimmedForLookup
+            guard !key.isEmpty else { return }
+            partialResult[key] = entry.value.stringValue
+        }
+        let outputKey = try container.decodeIfPresent(String.self, forKey: .outputKey)?.trimmedForLookup ?? ""
+
+        self.init(service: service, action: action, params: params, outputKey: outputKey)
+    }
+
+    func normalized(fallbackIndex: Int) -> ParsedStep {
+        ParsedStep(
+            service: service,
+            action: action,
+            params: params,
+            outputKey: outputKey.nonEmpty ?? Self.defaultOutputKey(
+                for: service,
+                action: action,
+                fallbackIndex: fallbackIndex
+            )
+        )
+    }
+
+    private static func normalizeService(_ rawValue: String?) -> String {
+        switch rawValue?.trimmedForLookup.lowercased() {
+        case "http", "web", "fetch", "request":
+            return "http"
+        case "notify", "notification", "reminder", "alert":
+            return "notify"
+        default:
+            return "llm"
+        }
+    }
+
+    private static func defaultAction(for service: String) -> String {
+        switch service {
+        case "http":
+            return "request"
+        case "notify":
+            return "notify"
+        default:
+            return "generate"
+        }
+    }
+
+    private static func defaultOutputKey(for service: String, action: String, fallbackIndex: Int) -> String {
+        guard service != "notify" else { return "" }
+
+        let sanitizedAction = action
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .joined(separator: "_")
+            .trimmedForLookup
+            .lowercased()
+
+        let base = sanitizedAction.nonEmpty ?? "\(service)_step"
+        return "\(base)_result_\(fallbackIndex + 1)"
+    }
 }
 
-struct AutomationPreviewCard: View {
+private enum FlexibleStringValue: Decodable {
+    case string(String)
+    case integer(Int)
+    case double(Double)
+    case boolean(Bool)
+    case object([String: FlexibleStringValue])
+    case array([FlexibleStringValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .integer(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(Bool.self) {
+            self = .boolean(value)
+        } else if let value = try? container.decode([String: FlexibleStringValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([FlexibleStringValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported parameter value.")
+        }
+    }
+
+    var stringValue: String {
+        switch self {
+        case .string(let value):
+            return value
+        case .integer(let value):
+            return String(value)
+        case .double(let value):
+            return String(value)
+        case .boolean(let value):
+            return value ? "true" : "false"
+        case .null:
+            return ""
+        case .object, .array:
+            return serializedJSONString()
+        }
+    }
+
+    private func serializedJSONString() -> String {
+        let object: Any
+        switch self {
+        case .object(let value):
+            object = value.mapValues(\.jsonObject)
+        case .array(let value):
+            object = value.map(\.jsonObject)
+        default:
+            return stringValue
+        }
+
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              let string = String(data: data, encoding: .utf8) else {
+            return ""
+        }
+
+        return string
+    }
+
+    private var jsonObject: Any {
+        switch self {
+        case .string(let value):
+            return value
+        case .integer(let value):
+            return value
+        case .double(let value):
+            return value
+        case .boolean(let value):
+            return value
+        case .object(let value):
+            return value.mapValues(\.jsonObject)
+        case .array(let value):
+            return value.map(\.jsonObject)
+        case .null:
+            return NSNull()
+        }
+    }
+}
+
+private struct AutomationPreviewCard: View {
     let automation: ParsedAutomation
+    let rawPlanJSON: String
     let errorMessage: String?
 
     var body: some View {
@@ -444,6 +818,20 @@ struct AutomationPreviewCard: View {
                         }
                     }
                 }
+            }
+
+            if !rawPlanJSON.isEmpty {
+                Divider()
+
+                DisclosureGroup("Generated JSON") {
+                    Text(rawPlanJSON)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 8)
+                        .textSelection(.enabled)
+                }
+                .font(.system(size: 13, weight: .medium))
             }
 
             if let error = errorMessage {
