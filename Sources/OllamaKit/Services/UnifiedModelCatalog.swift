@@ -655,7 +655,7 @@ final class ModelStorage: ObservableObject {
                         "status": finalStatus,
                         "elapsed_seconds": String(format: "%.1f", elapsed),
                         "is_runnable": "\(outcome.isRunnable)",
-                        "validation_message": outcome.message
+                        "validation_message": outcome.message ?? ""
                     ]) { $1 },
                     body: outcome.status == .failed ? """
                     Detailed Validation Failure Report
