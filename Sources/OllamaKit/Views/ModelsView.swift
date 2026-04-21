@@ -1171,10 +1171,19 @@ struct ModelDetailSheet: View {
                     title: Text(warning.title),
                     message: Text(warning.message),
                     primaryButton: .default(Text("Download Anyway")) {
-                        viewModel.confirmPendingDownload()
+                        // FIX: Capture warning data directly before dismissing alert.
+                        // SwiftUI's .alert(item:) can nil out the bound item concurrently
+                        // with the button action, causing confirmPendingDownload()'s
+                        // guard-let to fail silently and the download never starts.
+                        let file = warning.file
+                        let modelId = warning.modelId
+                        viewModel.pendingDownloadWarning = nil
+                        Task {
+                            await viewModel.downloadFile(file, modelId: modelId)
+                        }
                     },
                     secondaryButton: .cancel {
-                        viewModel.cancelPendingDownload()
+                        viewModel.pendingDownloadWarning = nil
                     }
                 )
             }
@@ -1648,11 +1657,14 @@ class ModelSearchViewModel: ObservableObject {
     }
 
     func confirmPendingDownload() {
-        guard let pendingDownloadWarning else { return }
+        guard let pending = pendingDownloadWarning else { return }
+        // Capture values before nil-ing to avoid races with SwiftUI's .alert(item:)
+        let file = pending.file
+        let modelId = pending.modelId
         self.pendingDownloadWarning = nil
 
         Task {
-            await downloadFile(pendingDownloadWarning.file, modelId: pendingDownloadWarning.modelId)
+            await downloadFile(file, modelId: modelId)
         }
     }
 
