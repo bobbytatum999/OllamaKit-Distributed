@@ -28,7 +28,6 @@ permissions:
 
 env:
   
-  # Gemma 4 support requires b8641+
   LLAMA_CPP_TAG: "b8783"
   CONFIGURATION: ${{ (github.event_name == 'workflow_dispatch' && inputs.build_type == 'debug') && 'Debug' || 'Release' }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -74,13 +73,14 @@ jobs:
             .deps/llama.cpp
             Vendor/llama.xcframework
           key: ${{ runner.os }}-llama-xcframework-${{ env.LLAMA_CPP_TAG }}
+          restore-keys: |
+            ${{ runner.os }}-llama-xcframework-
 
       - name: Build llama.cpp XCFramework
         if: steps.cache-llama.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           mkdir -p .deps Vendor
-          rm -rf .deps/llama.cpp Vendor/llama.xcframework
           git clone --depth 1 --branch "${LLAMA_CPP_TAG}" https://github.com/ggml-org/llama.cpp.git .deps/llama.cpp
           bash Scripts/build-llama-ios-xcframework.sh \
             "$PWD/.deps/llama.cpp" \
@@ -98,6 +98,8 @@ jobs:
         with:
           path: Vendor/Runtime
           key: ${{ runner.os }}-embedded-runtimes-${{ hashFiles('Scripts/embedded-runtime-sources.json') }}
+          restore-keys: |
+            ${{ runner.os }}-embedded-runtimes-
 
       - name: Build embedded runtimes
         if: matrix.runtime_flavor == 'with-runtimes' && steps.cache-runtimes.outputs.cache-hit != 'true'
