@@ -1065,7 +1065,7 @@ struct BenchmarkSection: View {
         .task {
             await modelStore.refresh()
         }
-        .onChange(of: benchmarkCandidates.map(\.persistentReference)) { _, references in
+        .onChange(of: benchmarkCandidates.map { $0.persistentReference }) { _, references in
             if !selectedBenchmarkModelReference.isEmpty && !references.contains(selectedBenchmarkModelReference) {
                 selectedBenchmarkModelReference = ""
             }
