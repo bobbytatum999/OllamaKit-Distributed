@@ -98,6 +98,8 @@ jobs:
         with:
           path: Vendor/Runtime
           key: ${{ runner.os }}-embedded-runtimes-${{ hashFiles('Scripts/embedded-runtime-sources.json') }}
+
+      - name: Build embedded runtimes
         if: matrix.runtime_flavor == 'with-runtimes' && steps.cache-runtimes.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
