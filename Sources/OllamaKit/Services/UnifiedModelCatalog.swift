@@ -271,6 +271,7 @@ struct ModelSnapshot: @preconcurrency Identifiable, Hashable, Sendable {
 }
 
 extension RuntimePreferences {
+    @MainActor
     static func fromSettings(_ settings: AppSettings = .shared, contextLength: Int? = nil) -> RuntimePreferences {
         RuntimePreferences(
             contextLength: max(contextLength ?? settings.defaultContextLength, 512),
@@ -283,7 +284,6 @@ extension RuntimePreferences {
             mlockEnabled: settings.mlockEnabled,
             keepModelInMemory: settings.keepModelInMemory,
             autoOffloadMinutes: settings.autoOffloadMinutes
-
         )
     }
 }

@@ -39,6 +39,11 @@ final class ModelRunner: ObservableObject {
         let resolvedGpuLayers = await MainActor.run { gpuLayers ?? AppSettings.shared.gpuLayers }
         let resolvedKvCachePreset = await MainActor.run { AppSettings.shared.kvCachePreset.rawValue }
 
+        let (settings, snapshot) = await MainActor.run {
+            let s = AppSettings.shared
+            let snap = await ModelStorage.shared.snapshot(name: catalogId)
+            return (s, snap)
+        }
         await MainActor.run {
             AppLogStore.shared.record(
                 .model,
@@ -47,38 +52,40 @@ final class ModelRunner: ObservableObject {
                 metadata: [
                     "catalog_id": catalogId,
                     "context_length": "\(max(contextLength, 512))",
-                    "gpu_layers": "\(gpuLayers ?? AppSettings.shared.gpuLayers)",
-                    "kv_cache_preset": AppSettings.shared.kvCachePreset.rawValue
+                    "gpu_layers": "\(gpuLayers ?? settings.gpuLayers)",
+                    "kv_cache_preset": settings.kvCachePreset.rawValue
                 ]
             )
         }
-        if let snapshot = await ModelStorage.shared.snapshot(name: catalogId),
+        if let snapshot = snapshot,
            snapshot.backendKind == .ggufLlama,
            !snapshot.isValidatedRunnable
         {
             let refreshedSnapshot = await ModelStorage.shared.validateModel(catalogId: snapshot.catalogId) ?? snapshot
-            guard refreshedSnapshot.isValidatedRunnable else {
+            let isRunnable = await MainActor.run { refreshedSnapshot.isValidatedRunnable }
+            guard isRunnable else {
+                let summary = await MainActor.run { refreshedSnapshot.validationSummary }
                 throw ModelError.backendUnavailable(
-                    refreshedSnapshot.validationSummary
-                        ?? "This GGUF model failed validation on this device and cannot be loaded for chat."
+                    summary ?? "This GGUF model failed validation on this device and cannot be loaded for chat."
                 )
             }
 
         }
 
-        let settings = await MainActor.run { AppSettings.shared }
-        let runtime = RuntimePreferences(
-            contextLength: max(contextLength, 512),
-            gpuLayers: gpuLayers ?? settings.gpuLayers,
-            threads: settings.threads,
-            batchSize: settings.batchSize,
-            kvCachePreset: settings.kvCachePreset,
-            flashAttentionEnabled: settings.flashAttentionEnabled,
-            mmapEnabled: settings.mmapEnabled,
-            mlockEnabled: settings.mlockEnabled,
-            keepModelInMemory: settings.keepModelInMemory,
-            autoOffloadMinutes: settings.autoOffloadMinutes
-        )
+        let runtime = await MainActor.run {
+            RuntimePreferences(
+                contextLength: max(contextLength, 512),
+                gpuLayers: gpuLayers ?? settings.gpuLayers,
+                threads: settings.threads,
+                batchSize: settings.batchSize,
+                kvCachePreset: settings.kvCachePreset,
+                flashAttentionEnabled: settings.flashAttentionEnabled,
+                mmapEnabled: settings.mmapEnabled,
+                mlockEnabled: settings.mlockEnabled,
+                keepModelInMemory: settings.keepModelInMemory,
+                autoOffloadMinutes: settings.autoOffloadMinutes
+            )
+        }
 
         let entry = try await RuntimeCoordinator.shared.loadModel(
             catalogId: catalogId,
@@ -92,7 +99,7 @@ final class ModelRunner: ObservableObject {
                 message: "Model loaded successfully.",
                 metadata: [
                     "catalog_id": catalogId,
-                    "resolved_path": entry.localPath
+                    "resolved_path": entry.localPath ?? ""
                 ]
             )
 
