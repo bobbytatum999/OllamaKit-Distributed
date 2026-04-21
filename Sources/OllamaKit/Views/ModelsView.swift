@@ -601,63 +601,6 @@ private struct FlowLayout<Content: View>: View {
     }
 }
 
-@MainActor
-struct ModelAgentCapabilitiesSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var settings = AppSettings.shared
-
-    let model: ModelSnapshot
-
-    private var runtimeCapabilities: AgentCapabilityProfile {
-        AgentToolRuntime.shared.runtimeCapabilityPreview()
-    }
-
-    private var runtimePackages: [String: RuntimePackageRecord] {
-        Dictionary(
-            uniqueKeysWithValues: AgentToolRuntime.shared
-                .runtimePackagePreview(for: model)
-                .map { ($0.id, $0) }
-        )
-    }
-
-    private var effectiveCapabilities: ModelAgentCapabilityProfile {
-        AgentToolRuntime.shared.effectiveCapabilitiesPreview(for: model) ?? model.effectiveAgentCapabilities
-    }
-
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-            Text(text)
-        }
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            Capsule(style: .continuous)
-                .fill(.thinMaterial)
-        )
-    }
-}
-
-private struct FlowLayout<Content: View>: View {
-    let spacing: CGFloat
-    @ViewBuilder var content: Content
-
-    init(spacing: CGFloat = 8, @ViewBuilder content: () -> Content) {
-        self.spacing = spacing
-        self.content = content()
-    }
-
-    var body: some View {
-        HStack(spacing: spacing) {
-            content
-            Spacer(minLength: 0)
-        }
-    }
-}
-
 struct EmptyModelsView: View {
     var body: some View {
         VStack(spacing: 16) {

@@ -66,6 +66,7 @@ final class ModelRunner: ObservableObject {
 
         }
 
+        let settings = await MainActor.run { AppSettings.shared }
         let runtime = RuntimePreferences(
             contextLength: max(contextLength, 512),
             gpuLayers: gpuLayers ?? settings.gpuLayers,

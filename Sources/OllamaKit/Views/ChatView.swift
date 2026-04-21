@@ -633,171 +633,19 @@ struct ChatView: View {
 
         return voiceInput.isRecording ? .red : .secondary
     }
-}
-
-@MainActor
-class ChatViewModel: ObservableObject {
-    @Published var isGenerating = false
-    @Published var currentModel: ModelSnapshot?
-    @Published var errorMessage: String?
-    @Published var streamRevision = 0
-    
-    func sendMessage(_ content: String, in session: ChatSession, context: ModelContext) async {
-        guard let model = currentModel else {
-            AppLogStore.shared.record(
-                .chat,
-                level: .error,
-                title: "Message Rejected",
-                message: "No runnable model is selected."
-            )
-            errorMessage = "No runnable model is selected. Pick another validated model or re-download the missing one."
-            Task { @MainActor in
-                HapticManager.notification(.error)
-            }
+    private func toggleVoiceInput() {
+        if voiceInput.isRecording {
+            voiceInput.stopRecording()
             return
         }
 
-        let conversationTurns = session.orderedMessages
-            .filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .map { ConversationTurn(role: $0.roleValue, content: $0.content) }
-        
-        let userMessage = ChatMessage(role: .user, content: content)
-        userMessage.session = session
-        context.insert(userMessage)
-        session.updatedAt = Date()
-
-        try? context.save()
-
-        let assistantMessage = ChatMessage(role: .assistant, content: "", isGenerating: true)
-        assistantMessage.session = session
-        context.insert(assistantMessage)
-        try? context.save()
-
-        isGenerating = true
-        streamRevision = 0
-        AppLogStore.shared.record(
-            .chat,
-            title: "Generation Started",
-            message: "Started model generation for chat session.",
-            metadata: [
-                "session_id": session.id.uuidString,
-                "model_id": model.catalogId,
-                "streaming": "\(AppSettings.shared.streamingEnabled)"
-            ]
-        )
-        defer {
-            isGenerating = false
-        }
-
-        let parameters = ModelParameters.appDefault
-        
-        do {
-            try await ModelRunner.shared.loadModel(
-                catalogId: model.catalogId,
-                contextLength: model.runtimeContextLength,
-                gpuLayers: AppSettings.shared.gpuLayers
-            )
-
-            var generatedText = ""
-            let shouldStreamInUI = AppSettings.shared.streamingEnabled
-
-            let result = try await ModelRunner.shared.generate(
-                prompt: "",
-                systemPrompt: session.systemPrompt,
-                conversationTurns: conversationTurns + [ConversationTurn(role: userMessage.roleValue, content: userMessage.content)],
-                parameters: parameters
-            ) { token in
-                guard shouldStreamInUI else { return }
-                generatedText += token
-                Task { @MainActor in
-                    assistantMessage.content = generatedText
-                    self.streamRevision += 1
-                }
-            }
-            
-            assistantMessage.content = result.text
-            assistantMessage.isGenerating = false
-            assistantMessage.tokenCount = result.tokensGenerated
-            assistantMessage.generationTime = result.generationTime
-            streamRevision += 1
-            AppLogStore.shared.record(
-                .chat,
-                title: "Generation Completed",
-                message: "Model generation completed.",
-                metadata: [
-                    "session_id": session.id.uuidString,
-                    "model_id": model.catalogId,
-                    "tokens": "\(result.tokensGenerated)",
-                    "seconds": String(format: "%.2f", result.generationTime),
-                    "cancelled": "\(result.wasCancelled)"
-                ],
-                body: result.text
-            )
-            
-            session.updatedAt = Date()
-            try? context.save()
-            Task { @MainActor in
-                if result.wasCancelled {
-                    HapticManager.impact(.medium)
-                } else {
-                    HapticManager.notification(.success)
-                }
-            }
-            
-        } catch {
-            if isGenerationCancelled(error) {
-                AppLogStore.shared.record(
-                    .chat,
-                    level: .warning,
-                    title: "Generation Cancelled",
-                    message: "Generation was cancelled before completion.",
-                    metadata: [
-                        "session_id": session.id.uuidString,
-                        "model_id": model.catalogId
-                    ]
-                )
-                assistantMessage.isGenerating = false
-                if assistantMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    context.delete(assistantMessage)
-                }
-                try? context.save()
-
+        voiceInput.startRecording { transcript, isFinal in
+            messageText = transcript
+            if isFinal {
                 Task { @MainActor in
                     HapticManager.impact(.light)
                 }
             }
-
-            AppLogStore.shared.record(
-                .chat,
-                level: .error,
-                title: "Generation Failed",
-                message: error.localizedDescription,
-                metadata: [
-                    "session_id": session.id.uuidString,
-                    "model_id": model.catalogId
-                ]
-            )
-            errorMessage = error.localizedDescription
-            assistantMessage.content = "Error: \(error.localizedDescription)"
-            assistantMessage.isGenerating = false
-            try? context.save()
-            Task { @MainActor in
-                HapticManager.notification(.error)
-            }
-        }
-    }
-    
-    func stopGeneration() {
-        AppLogStore.shared.record(
-            .chat,
-            level: .warning,
-            title: "Stop Requested",
-            message: "User requested generation stop."
-        )
-        ModelRunner.shared.stopGeneration()
-        Task { @MainActor in
-            HapticManager.impact(.medium)
-
         }
     }
 }
