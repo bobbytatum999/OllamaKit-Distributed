@@ -65,21 +65,18 @@ jobs:
           xcodebuild -list -project OllamaKit.xcodeproj
           xcodebuild -showdestinations -project OllamaKit.xcodeproj -scheme OllamaKit || true
 
-      - name: Restore llama.cpp cache
+      - name: Restore llama.cpp XCFramework cache
         id: cache-llama
         uses: actions/cache@v4
         with:
-          path: |
-            .deps/llama.cpp
-            Vendor/llama.xcframework
+          path: Vendor/llama.xcframework
           key: ${{ runner.os }}-llama-xcframework-${{ env.LLAMA_CPP_TAG }}
-          restore-keys: |
-            ${{ runner.os }}-llama-xcframework-
 
       - name: Build llama.cpp XCFramework
         if: steps.cache-llama.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
+          rm -rf .deps/llama.cpp Vendor/llama.xcframework
           mkdir -p .deps Vendor
           git clone --depth 1 --branch "${LLAMA_CPP_TAG}" https://github.com/ggml-org/llama.cpp.git .deps/llama.cpp
           bash Scripts/build-llama-ios-xcframework.sh \
