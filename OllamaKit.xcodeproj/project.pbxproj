@@ -57,6 +57,8 @@
 		000000010000000000000035 /* TypingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000012B /* TypingIndicator.swift */; };
 		000000010000000000000036 /* ModelSelectorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000012C /* ModelSelectorSheet.swift */; };
 		000000010000000000000037 /* ModelComparisonSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000012D /* ModelComparisonSheet.swift */; };
+		000000010000000000000038 /* ModelDiscoverySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000012E /* ModelDiscoverySheet.swift */; };
+		000000010000000000000039 /* ModelsBrowserSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000001000000000000012F /* ModelsBrowserSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -165,6 +167,8 @@
 		00000001000000000000012B /* TypingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingIndicator.swift; sourceTree = "<group>"; };
 		00000001000000000000012C /* ModelSelectorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSelectorSheet.swift; sourceTree = "<group>"; };
 		00000001000000000000012D /* ModelComparisonSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelComparisonSheet.swift; sourceTree = "<group>"; };
+		00000001000000000000012E /* ModelDiscoverySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDiscoverySheet.swift; sourceTree = "<group>"; };
+		00000001000000000000012F /* ModelsBrowserSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsBrowserSheet.swift; sourceTree = "<group>"; };
 		000000010000000000000122 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		000000010000000000000123 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 		000000010000000000000124 /* ShareExtension */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = ShareExtension; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -254,6 +258,8 @@
 				00000001000000000000012B /* TypingIndicator.swift */,
 				00000001000000000000012C /* ModelSelectorSheet.swift */,
 				00000001000000000000012D /* ModelComparisonSheet.swift */,
+				00000001000000000000012E /* ModelDiscoverySheet.swift */,
+				00000001000000000000012F /* ModelsBrowserSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -456,6 +462,8 @@
 				000000010000000000000035 /* TypingIndicator.swift in Sources */,
 				000000010000000000000036 /* ModelSelectorSheet.swift in Sources */,
 				000000010000000000000037 /* ModelComparisonSheet.swift in Sources */,
+				000000010000000000000038 /* ModelDiscoverySheet.swift in Sources */,
+				000000010000000000000039 /* ModelsBrowserSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
