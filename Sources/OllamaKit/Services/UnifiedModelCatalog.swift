@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import OllamaCore
 import SwiftData
+import UIKit
 
 typealias GenerationResult = InferenceResult
 typealias ModelError = InferenceError
@@ -518,13 +519,30 @@ final class ModelStorage: ObservableObject {
 
     @discardableResult
     func validateModel(catalogId: String) async -> ModelSnapshot? {
+        let validationStartTime = Date()
+        let settings = AppSettings.shared
+
+        // Build detailed pre-validation context for diagnostics
+        let preValidationMetadata: [String: String] = [
+            "catalog_id": catalogId,
+            "gpu_layers": "\(settings.gpuLayers)",
+            "threads": "\(settings.threads)",
+            "batch_size": "\(settings.batchSize)",
+            "turbo_quant_mode": "\(settings.turboQuantMode)",
+            "kv_cache_k": "\(settings.kvCacheTypeK)",
+            "kv_cache_v": "\(settings.kvCacheTypeV)",
+            "flash_attention": "\(settings.flashAttentionEnabled)",
+            "device": UIDevice.current.model,
+            "ios_version": UIDevice.current.systemVersion
+        ]
+
         await MainActor.run {
             AppLogStore.shared.record(
                 .modelsCatalog,
-                level: .debug,
+                level: .info,
                 title: "Model Validation Started",
-                message: "Validating model: \(catalogId)",
-                metadata: ["catalog_id": catalogId]
+                message: "Beginning validation for: \(catalogId)",
+                metadata: preValidationMetadata
             )
         }
 
@@ -533,6 +551,16 @@ final class ModelStorage: ObservableObject {
                 catalogId,
                 contextLength: AppSettings.shared.defaultContextLength
             ) else {
+                let errorMsg = "Model not found in registry during validation lookup."
+                await MainActor.run {
+                    AppLogStore.shared.record(
+                        .modelsCatalog,
+                        level: .error,
+                        title: "Validation Failed — Model Not Found",
+                        message: "\(catalogId) could not be resolved in the registry.",
+                        metadata: ["catalog_id": catalogId]
+                    )
+                }
                 return nil
             }
 
@@ -546,7 +574,6 @@ final class ModelStorage: ObservableObject {
             }
 
             let validationContextLength = min(entry.runtimeContextLength, AppSettings.shared.defaultContextLength)
-            let settings = AppSettings.shared
             let runtime = RuntimePreferences(
                 contextLength: min(max(validationContextLength, 512), 1024),
                 gpuLayers: settings.gpuLayers,
@@ -563,6 +590,15 @@ final class ModelStorage: ObservableObject {
                 autoOffloadMinutes: 1
             )
 
+            let modelDiagnostics = [
+                "backend": "\(entry.backendKind)",
+                "model_size_mb": String(format: "%.1f", Double(entry.capabilitySummary.sizeBytes) / 1_048_576.0),
+                "quantization": entry.capabilitySummary.quantization,
+                "parameters": entry.capabilitySummary.parameterCountLabel,
+                "file_exists": "\(entry.localFileURL != nil && FileManager.default.fileExists(atPath: entry.localFileURL!.path))",
+                "validation_context": "\(runtime.contextLength)"
+            ]
+
             // FIX: Wrap validation in a separate task with its own error handling
             // to prevent crashes from propagating and crashing the app
             let outcome: ModelValidationOutcome
@@ -572,11 +608,27 @@ final class ModelStorage: ObservableObject {
                     runtime: runtime
                 )
             } catch {
-                // If validation throws, create a failed outcome
+                // If validation throws, create a detailed failed outcome with full context
+                let errorDescription = error.localizedDescription
+                let errorType = String(describing: type(of: error))
+                let failedMessage = "\(errorType): \(errorDescription)"
                 outcome = ModelValidationOutcome(
                     status: .failed,
-                    message: "Validation error: \(error.localizedDescription)"
+                    message: "Validation error: \(failedMessage)"
                 )
+                await MainActor.run {
+                    AppLogStore.shared.record(
+                        .modelsCatalog,
+                        level: .error,
+                        title: "Validation Runtime Error",
+                        message: "Validation threw an exception for \(entry.displayName): \(failedMessage)",
+                        metadata: preValidationMetadata.merging(modelDiagnostics) { $1 }.merging([
+                            "error_type": errorType,
+                            "error_message": errorDescription,
+                            "elapsed_seconds": String(format: "%.1f", Date().timeIntervalSince(validationStartTime))
+                        ]) { $1 }
+                    )
+                }
             }
 
             _ = try await ModelRegistryStore.shared.updateValidation(
@@ -585,27 +637,81 @@ final class ModelStorage: ObservableObject {
             )
             await refresh()
             let resultSnapshot = snapshot(name: entry.catalogId)
-            let summary = resultSnapshot?.validationSummary
+
+            // High-detail post-validation log — success or failure, log everything
+            let elapsed = Date().timeIntervalSince(validationStartTime)
+            let finalStatus = outcome.status.rawValue
+            let logLevel: AppLogLevel = outcome.status == .failed ? .error : (outcome.status == .unknown ? .warning : .info)
 
             await MainActor.run {
                 AppLogStore.shared.record(
                     .modelsCatalog,
-                    level: .info,
-                    title: "Model Validation Completed",
-                    message: "Validation completed for: \(catalogId)",
-                    metadata: ["catalog_id": catalogId, "status": "\(outcome.status)", "summary": summary ?? "none"]
+                    level: logLevel,
+                    title: "Model Validation \(outcome.status == .validated ? "Succeeded" : outcome.status == .failed ? "Failed" : "Inconclusive")",
+                    message: "Validation for \(entry.displayName): \(finalStatus). \(outcome.message)",
+                    metadata: preValidationMetadata.merging(modelDiagnostics) { $1 }.merging([
+                        "catalog_id": catalogId,
+                        "display_name": entry.displayName,
+                        "status": finalStatus,
+                        "elapsed_seconds": String(format: "%.1f", elapsed),
+                        "is_runnable": "\(outcome.isRunnable)",
+                        "validation_message": outcome.message
+                    ]) { $1 },
+                    body: outcome.status == .failed ? """
+                    Detailed Validation Failure Report
+                    ===================================
+                    Model: \(entry.displayName) (\(catalogId))
+                    Backend: \(entry.backendKind)
+                    Size: \(String(format: "%.1f", Double(entry.capabilitySummary.sizeBytes) / 1_048_576.0)) MB
+                    Quantization: \(entry.capabilitySummary.quantization)
+                    Parameters: \(entry.capabilitySummary.parameterCountLabel)
+                    File exists: \(entry.localFileURL != nil && FileManager.default.fileExists(atPath: entry.localFileURL!.path))
+
+                    Validation Settings:
+                    - Context length: \(runtime.contextLength)
+                    - GPU layers: \(runtime.gpuLayers)
+                    - Threads: \(runtime.threads)
+                    - Batch size: \(runtime.batchSize)
+                    - TurboQuant: \(runtime.turboQuantMode)
+
+                    Outcome:
+                    - Status: \(finalStatus)
+                    - Elapsed: \(String(format: "%.1f", elapsed))s
+                    - Message: \(outcome.message)
+
+                    The validation was caught and logged safely without crashing the app.
+                    """ : nil
                 )
             }
             return resultSnapshot
         } catch {
-            // FIX: Even if the entire process fails, try to record the failure in the registry
+            // FIX: Even if the entire process fails catastrophically, record everything
+            let elapsed = Date().timeIntervalSince(validationStartTime)
+            let errorType = String(describing: type(of: error))
             await MainActor.run {
                 AppLogStore.shared.record(
                     .modelsCatalog,
                     level: .error,
-                    title: "Failed to validate model",
-                    message: "Error: \(error.localizedDescription)",
-                    metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
+                    title: "Validation Process Failed",
+                    message: "Critical error validating \(catalogId): \(error.localizedDescription)",
+                    metadata: preValidationMetadata.merging([
+                        "catalog_id": catalogId,
+                        "error_type": errorType,
+                        "error_message": error.localizedDescription,
+                        "elapsed_seconds": String(format: "%.1f", elapsed)
+                    ]) { $1 },
+                    body: """
+                    Critical Validation Failure Report
+                    ===================================
+                    Model: \(catalogId)
+                    Error Type: \(errorType)
+                    Error Message: \(error.localizedDescription)
+                    Elapsed Time: \(String(format: "%.1f", elapsed))s
+
+                    This is a catastrophic failure during the validation process.
+                    The error was caught and logged safely without crashing the app.
+                    The model's validation status has been set to 'failed' if possible.
+                    """
                 )
             }
 
@@ -613,7 +719,7 @@ final class ModelStorage: ObservableObject {
             do {
                 let failedOutcome = ModelValidationOutcome(
                     status: .failed,
-                    message: "Validation failed: \(error.localizedDescription)"
+                    message: "Validation process failed: \(error.localizedDescription)"
                 )
                 _ = try await ModelRegistryStore.shared.updateValidation(
                     catalogId: catalogId,
@@ -627,7 +733,7 @@ final class ModelStorage: ObservableObject {
                         .modelsCatalog,
                         level: .error,
                         title: "Failed to update validation status",
-                        message: "Error: \(error.localizedDescription)",
+                        message: "Could not write failure status to registry: \(error.localizedDescription)",
                         metadata: ["catalog_id": catalogId, "error": error.localizedDescription]
                     )
                 }

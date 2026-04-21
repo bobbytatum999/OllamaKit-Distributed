@@ -160,33 +160,43 @@ struct CreateAutomationView: View {
                 systemPrompt: systemPrompt
             )
 
-            // Clean the response - strip markdown code blocks if present
-            var jsonString = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            if jsonString.hasPrefix("```") {
-                // Strip markdown code block
-                if let firstNewline = jsonString.firstIndex(of: "\n") {
-                    jsonString = String(jsonString[jsonString.index(after: firstNewline)...])
-                }
-            }
-            if jsonString.hasSuffix("```") {
-                jsonString = String(jsonString.dropLast(3))
-            }
-            jsonString = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Try multiple strategies to extract valid JSON from the LLM response
+            let extractionResult = extractJSON(from: content)
 
-            guard let jsonData = jsonString.data(using: .utf8),
-                  let parsed = try? JSONDecoder().decode(ParsedAutomation.self, from: jsonData) else {
+            switch extractionResult {
+            case .success(let jsonData):
+                do {
+                    let parsed = try JSONDecoder().decode(ParsedAutomation.self, from: jsonData)
+                    await MainActor.run {
+                        generatedAutomation = parsed
+                        isGenerating = false
+                        HapticManager.impact(.light)
+                    }
+                } catch let decodeError as DecodingError {
+                    // Detailed decoding error - log everything for debugging
+                    let errorDetails = detailedDecodingError(decodeError)
+                    await MainActor.run {
+                        logAutomationParseFailure(content: content, strategy: "JSONDecoder", error: errorDetails)
+                        errorMessage = "Failed to parse automation plan. \(errorDetails)"
+                        showingError = true
+                        isGenerating = false
+                    }
+                } catch {
+                    await MainActor.run {
+                        logAutomationParseFailure(content: content, strategy: "JSONDecoder", error: error.localizedDescription)
+                        errorMessage = "Failed to parse automation plan: \(error.localizedDescription)"
+                        showingError = true
+                        isGenerating = false
+                    }
+                }
+
+            case .failure(let extractionError):
                 await MainActor.run {
-                    errorMessage = "Failed to parse automation plan. The model returned an unexpected format."
+                    logAutomationParseFailure(content: content, strategy: "extraction", error: extractionError)
+                    errorMessage = "Failed to parse automation plan. \(extractionError)"
                     showingError = true
                     isGenerating = false
                 }
-                return
-            }
-
-            await MainActor.run {
-                generatedAutomation = parsed
-                isGenerating = false
-                HapticManager.impact(.light)
             }
         } catch {
             await MainActor.run {
@@ -195,6 +205,89 @@ struct CreateAutomationView: View {
                 isGenerating = false
             }
         }
+    }
+
+    // MARK: - JSON Extraction
+
+    private enum JSONExtractionResult {
+        case success(Data)
+        case failure(String)
+    }
+
+    /// Attempts to extract valid JSON from an LLM response using multiple strategies.
+    private func extractJSON(from content: String) -> JSONExtractionResult {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Strategy 1: Strip markdown code block with language tag (e.g. ```json ... ```)
+        if trimmed.hasPrefix("```") {
+            var withoutOpening = trimmed
+            if let firstNewline = withoutOpening.firstIndex(of: "\n") {
+                withoutOpening = String(withoutOpening[withoutOpening.index(after: firstNewline)...])
+            }
+            withoutOpening = withoutOpening.trimmingCharacters(in: .whitespacesAndNewlines)
+            if withoutOpening.hasSuffix("```") {
+                withoutOpening = String(withoutOpening.dropLast(3))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let data = withoutOpening.data(using: .utf8),
+               JSONSerialization.isValidJSONObject(try? JSONSerialization.jsonObject(with: data)) {
+                return .success(data)
+            }
+        }
+
+        // Strategy 2: Find the first '{' and last '}' to handle text around JSON
+        if let firstBrace = trimmed.firstIndex(of: "{"),
+           let lastBrace = trimmed.lastIndex(of: "}") {
+            let potentialJSON = String(trimmed[firstBrace...lastBrace])
+            if let data = potentialJSON.data(using: .utf8),
+               JSONSerialization.isValidJSONObject(try? JSONSerialization.jsonObject(with: data)) {
+                return .success(data)
+            }
+        }
+
+        // Strategy 3: Try the raw trimmed content as-is
+        if let data = trimmed.data(using: .utf8),
+           JSONSerialization.isValidJSONObject(try? JSONSerialization.jsonObject(with: data)) {
+            return .success(data)
+        }
+
+        return .failure("The model response did not contain valid JSON. Tried: markdown code block stripping, brace extraction, and raw parsing.")
+    }
+
+    /// Converts a DecodingError into a human-readable diagnostic string.
+    private func detailedDecodingError(_ error: DecodingError) -> String {
+        switch error {
+        case .keyNotFound(let key, let context):
+            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
+            return "Missing required field '\(key.stringValue)' at '\(path.isEmpty ? "root" : path)'. Expected type: \(context.debugDescription)"
+        case .typeMismatch(let type, let context):
+            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
+            return "Type mismatch at '\(path.isEmpty ? "root" : path)': expected \(type), got \(context.debugDescription)"
+        case .valueNotFound(let type, let context):
+            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
+            return "Missing value at '\(path.isEmpty ? "root" : path)': expected \(type)"
+        case .dataCorrupted(let context):
+            return "Invalid JSON structure: \(context.debugDescription)"
+        @unknown default:
+            return error.localizedDescription
+        }
+    }
+
+    /// Logs detailed failure information to AppLogStore for debugging in Settings > Logs.
+    private func logAutomationParseFailure(content: String, strategy: String, error: String) {
+        AppLogStore.shared.record(
+            .app,
+            level: .error,
+            title: "Automation Plan Parse Failed",
+            message: "Failed to parse automation plan using \(strategy).",
+            metadata: [
+                "extraction_strategy": strategy,
+                "error_type": "parse_failure",
+                "content_length": "\(content.count)",
+                "error_summary": error
+            ],
+            body: "Raw LLM response (first 2000 chars):\n\(String(content.prefix(2000)))\n\nParse Error: \(error)"
+        )
     }
 
     private func saveAutomation() {

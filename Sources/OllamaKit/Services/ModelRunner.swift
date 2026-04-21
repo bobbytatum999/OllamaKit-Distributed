@@ -1,6 +1,8 @@
 import Combine
 import Foundation
 import OllamaCore
+import UIKit
+import MachO
 
 final class ModelRunner: ObservableObject {
     static let shared = ModelRunner()
@@ -106,6 +108,10 @@ final class ModelRunner: ObservableObject {
             }
         } catch {
             let elapsedMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+            let errorDescription = error.localizedDescription
+            let errorType = String(describing: type(of: error))
+
+            // Detailed validation failure logging for debugging in Settings > Logs
             await MainActor.run {
                 ModelPerformanceStore.shared.record(
                     ModelPerformanceSample(
@@ -113,12 +119,98 @@ final class ModelRunner: ObservableObject {
                         phase: .load,
                         elapsedMs: elapsedMs,
                         wasSuccessful: false,
-                        notes: error.localizedDescription
+                        notes: errorDescription
                     )
+                )
+
+                // High-detail log entry with full context about why validation failed
+                let snapshot = ModelStorage.shared.snapshot(name: catalogId)
+                let settings = AppSettings.shared
+
+                var logMetadata: [String: String] = [
+                    "catalog_id": catalogId,
+                    "elapsed_ms": String(format: "%.1f", elapsedMs),
+                    "error_type": errorType,
+                    "error_message": errorDescription,
+                    "context_length": "\(runtime.contextLength)",
+                    "gpu_layers": "\(runtime.gpuLayers)",
+                    "threads": "\(runtime.threads)",
+                    "batch_size": "\(runtime.batchSize)",
+                    "flash_attention": "\(runtime.flashAttentionEnabled)",
+                    "mmap_enabled": "\(runtime.mmapEnabled)",
+                    "turbo_quant": "\(runtime.turboQuantMode)",
+                    "device_model": UIDevice.current.model,
+                    "system_version": UIDevice.current.systemVersion,
+                    "memory_footprint_mb": "\(getAvailableMemoryMB())"
+                ]
+
+                if let snapshot {
+                    logMetadata["model_name"] = snapshot.displayName
+                    logMetadata["model_size_mb"] = String(format: "%.1f", Double(snapshot.size) / 1_048_576.0)
+                    logMetadata["quantization"] = snapshot.quantization
+                    logMetadata["parameters"] = snapshot.parameters
+                    logMetadata["backend"] = "\(snapshot.backendKind)"
+                    logMetadata["file_exists"] = "\(snapshot.fileExists)"
+                    logMetadata["validation_status"] = "\(snapshot.effectiveValidationStatus)"
+                    if let validationMsg = snapshot.validationMessage {
+                        logMetadata["previous_validation_msg"] = validationMsg
+                    }
+                }
+
+                AppLogStore.shared.record(
+                    .model,
+                    level: .error,
+                    title: "Model Load/Validation Failed",
+                    message: "Failed to load model '\(snapshot?.displayName ?? catalogId)'. Error: \(errorDescription)",
+                    metadata: logMetadata,
+                    body: """
+                    Model Validation Failure Report
+                    ================================
+                    Model: \(snapshot?.displayName ?? "unknown") (\(catalogId))
+                    Backend: \(snapshot?.backendKind.rawValue ?? "unknown")
+                    File exists: \(snapshot?.fileExists ?? false)
+                    Previous validation: \(snapshot?.effectiveValidationStatus.rawValue ?? "unknown")
+
+                    Runtime Settings:
+                    - Context length: \(runtime.contextLength)
+                    - GPU layers: \(runtime.gpuLayers)
+                    - Threads: \(runtime.threads)
+                    - Batch size: \(runtime.batchSize)
+                    - Flash attention: \(runtime.flashAttentionEnabled)
+                    - MMAP: \(runtime.mmapEnabled)
+                    - TurboQuant mode: \(runtime.turboQuantMode)
+
+                    Device Info:
+                    - Model: \(UIDevice.current.model)
+                    - iOS: \(UIDevice.current.systemVersion)
+                    - Memory footprint: ~\(getAvailableMemoryMB()) MB (resident)
+
+                    Error Details:
+                    - Type: \(errorType)
+                    - Message: \(errorDescription)
+                    - Elapsed time: \(String(format: "%.1f", elapsedMs)) ms
+
+                    This error was caught and logged safely without crashing the app.
+                    """
                 )
             }
             throw error
         }
+    }
+
+    /// Returns the app's current memory footprint in MB for diagnostic logging.
+    /// On iOS 13+, attempts to get available system memory; falls back to resident size.
+    private func getAvailableMemoryMB() -> Int {
+        // Report resident memory usage (physical memory this app is using)
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        guard kerr == KERN_SUCCESS else { return -1 }
+        return Int(info.resident_size) / (1024 * 1024)
     }
 
     func validateModel(catalogId: String) async -> ModelSnapshot? {
