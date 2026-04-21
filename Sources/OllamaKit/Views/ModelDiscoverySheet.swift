@@ -1,10 +1,11 @@
 import SwiftUI
+import Foundation
 
 struct ModelDiscoverySheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var searchVM = ModelSearchViewModel()
     @State private var searchText = ""
-    @State private var selectedFilter: ModelMenuFilter = .all
+    @State private var selectedFilter: ModelMenuFilter = .tools
     @FocusState private var isSearchFocused: Bool
     @State private var debouncedSearchTask: Task<Void, Never>?
 
@@ -19,7 +20,7 @@ struct ModelDiscoverySheet: View {
     private var discoverCards: [DiscoverModelCardViewModel] {
         searchVM.recommendations
             .map { DiscoverModelCardViewModel(recommendation: $0, profile: searchVM.deviceProfile) }
-            .filter { selectedFilter == .all || !$0.capabilities.filter(selectedFilter.includes).isEmpty }
+            .filter { selectedFilter.includes(cardsCapabilities: $0.capabilities) }
             .sorted { lhs, rhs in
                 if lhs.tier.sortRank != rhs.tier.sortRank {
                     return lhs.tier.sortRank < rhs.tier.sortRank
@@ -70,8 +71,8 @@ struct ModelDiscoverySheet: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                    .padding(.bottom, 90)
+                    .padding(.top, 8)
+                    .padding(.bottom, 94)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -79,7 +80,7 @@ struct ModelDiscoverySheet: View {
             .safeAreaInset(edge: .bottom) {
                 DiscoverSearchBar(
                     text: $searchText,
-                    isFocused: _isSearchFocused,
+                    isFocused: $isSearchFocused,
                     onClear: {
                         debouncedSearchTask?.cancel()
                         searchText = ""
@@ -169,9 +170,9 @@ private struct DiscoverHeader: View {
                 Spacer()
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Add an AI model")
-                    .font(.system(size: 36, weight: .heavy, design: .rounded))
+                    .font(.system(size: 38, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
 
                 Text("Based on our recommendations")
@@ -224,7 +225,7 @@ private struct DiscoverHeader: View {
 
 private struct DiscoverSearchBar: View {
     @Binding var text: String
-    @FocusState var isFocused: Bool
+    let isFocused: FocusState<Bool>.Binding
     let onClear: () -> Void
     let onSubmit: () -> Void
 
@@ -235,7 +236,7 @@ private struct DiscoverSearchBar: View {
                 .foregroundStyle(.white.opacity(0.78))
 
             TextField("Search for a model", text: $text)
-                .focused($isFocused)
+                .focused(isFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
@@ -359,10 +360,11 @@ private struct DiscoverModelCard: View {
                 HuggingFaceAvatarView(model: card.recommendation.model, size: 52, cornerRadius: 14)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+                    HStack(alignment: .center, spacing: 8) {
                         Text(card.title)
                             .font(.system(size: 22, weight: .heavy, design: .rounded))
                             .foregroundStyle(.white)
+                            .lineLimit(2)
 
                         Text(card.sizeLabel)
                             .font(.system(size: 16, weight: .bold))
@@ -386,9 +388,9 @@ private struct DiscoverModelCard: View {
             Text(card.subtitle)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
-                .lineLimit(4)
+                .lineLimit(5)
 
-            CapabilityGrid(capabilities: card.capabilities)
+            CapabilityBullets(capabilities: card.capabilities)
 
             HStack(alignment: .center) {
                 if let badge = card.badge {
@@ -463,26 +465,30 @@ private struct DiscoverModelCard: View {
     }
 }
 
-private struct CapabilityGrid: View {
+private struct CapabilityBullets: View {
     let capabilities: [ModelCardCapability]
 
-    private let columns = [
-        GridItem(.flexible(minimum: 120), spacing: 10),
-        GridItem(.flexible(minimum: 120), spacing: 10)
-    ]
+    var rows: [[ModelCardCapability]] {
+        stride(from: 0, to: min(capabilities.count, 4), by: 2).map { start in
+            Array(capabilities[start..<min(start + 2, capabilities.count)])
+        }
+    }
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-            ForEach(capabilities.prefix(4)) { capability in
-                HStack(spacing: 8) {
-                    Image(systemName: capability.icon)
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 18) {
+                    ForEach(row) { capability in
+                        HStack(spacing: 8) {
+                            Text("•")
+                            Text(capability.title)
+                                .lineLimit(1)
+                        }
                         .font(.system(size: 13, weight: .semibold))
-                    Text(capability.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
+                        .foregroundStyle(.white.opacity(0.92))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
-                .foregroundStyle(.white.opacity(0.92))
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -580,7 +586,6 @@ private struct DiscoverCardBadge {
 }
 
 private enum ModelMenuFilter: String, CaseIterable, Identifiable {
-    case all
     case tools
     case reasoning
     case vision
@@ -590,7 +595,6 @@ private enum ModelMenuFilter: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: return "Tools"
         case .tools: return "Tools"
         case .reasoning: return "Reasoning"
         case .vision: return "Vision"
@@ -600,25 +604,23 @@ private enum ModelMenuFilter: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .all, .tools: return "wrench.and.screwdriver"
+        case .tools: return "wrench.and.screwdriver"
         case .reasoning: return "lightbulb"
         case .vision: return "camera.viewfinder"
         case .multilingual: return "globe"
         }
     }
 
-    func includes(_ capability: ModelCardCapability) -> Bool {
+    func includes(cardsCapabilities capabilities: [ModelCardCapability]) -> Bool {
         switch self {
-        case .all:
-            return true
         case .tools:
-            return capability.kind == .tools
+            return true
         case .reasoning:
-            return capability.kind == .reasoning
+            return capabilities.contains { $0.kind == .reasoning }
         case .vision:
-            return capability.kind == .vision
+            return capabilities.contains { $0.kind == .vision }
         case .multilingual:
-            return capability.kind == .multilingual
+            return capabilities.contains { $0.kind == .multilingual }
         }
     }
 }
