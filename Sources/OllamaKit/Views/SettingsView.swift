@@ -931,11 +931,43 @@ struct ModelPerformanceSection: View {
 }
 
 struct BenchmarkSection: View {
+    @StateObject private var modelStore = ModelStorage.shared
     @State private var benchmarkTask: Task<Void, Never>?
+    @State private var selectedBenchmarkModelReference = ""
     @State private var isRunning = false
     @State private var status = "Idle"
     @State private var resultLine = ""
     @State private var errorLine = ""
+
+    private var benchmarkCandidates: [ModelSnapshot] {
+        BuiltInModelCatalog.selectionModels(downloadedModels: modelStore.selectionSnapshots)
+            .filter(\.canBeSelectedForChat)
+            .sorted { lhs, rhs in
+                if lhs.isBuiltInAppleModel != rhs.isBuiltInAppleModel {
+                    return !lhs.isBuiltInAppleModel
+                }
+                if lhs.isValidatedRunnable != rhs.isValidatedRunnable {
+                    return lhs.isValidatedRunnable && !rhs.isValidatedRunnable
+                }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+    }
+
+    private var selectedBenchmarkModel: ModelSnapshot? {
+        ModelSnapshot.resolveStoredReference(selectedBenchmarkModelReference, in: benchmarkCandidates)
+    }
+
+    private var benchmarkModelLabel: String {
+        selectedBenchmarkModel?.displayName ?? "Automatic"
+    }
+
+    private var benchmarkModelDescription: String {
+        if selectedBenchmarkModel != nil {
+            return "Runs the benchmark against the selected model."
+        }
+
+        return "Automatic mode prefers the active chat model, then the default model, then installed non-Apple models before the on-device Apple model."
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -948,6 +980,62 @@ struct BenchmarkSection: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isRunning)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Benchmark Model")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                Menu {
+                    Button {
+                        selectedBenchmarkModelReference = ""
+                    } label: {
+                        if selectedBenchmarkModelReference.isEmpty {
+                            Label("Automatic", systemImage: "checkmark")
+                        } else {
+                            Text("Automatic")
+                        }
+                    }
+
+                    ForEach(benchmarkCandidates, id: \.catalogId) { model in
+                        Button {
+                            selectedBenchmarkModelReference = model.persistentReference
+                        } label: {
+                            if model.matchesStoredReference(selectedBenchmarkModelReference) {
+                                Label(benchmarkOptionTitle(for: model), systemImage: "checkmark")
+                            } else {
+                                Text(benchmarkOptionTitle(for: model))
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Label(
+                            benchmarkModelLabel,
+                            systemImage: selectedBenchmarkModel?.isBuiltInAppleModel == true ? "apple.logo" : "cpu"
+                        )
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(.ultraThinMaterial)
+                    )
+                }
+                .disabled(benchmarkCandidates.isEmpty || isRunning)
+
+                Text(benchmarkModelDescription)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 8) {
@@ -974,6 +1062,14 @@ struct BenchmarkSection: View {
             }
         }
         .padding(.vertical, 12)
+        .task {
+            await modelStore.refresh()
+        }
+        .onChange(of: benchmarkCandidates.map(\.persistentReference)) { _, references in
+            if !selectedBenchmarkModelReference.isEmpty && !references.contains(selectedBenchmarkModelReference) {
+                selectedBenchmarkModelReference = ""
+            }
+        }
         .onDisappear {
             benchmarkTask?.cancel()
             benchmarkTask = nil
@@ -1084,6 +1180,10 @@ struct BenchmarkSection: View {
     private func resolveBenchmarkCandidate(from candidates: [ModelSnapshot]) -> ModelSnapshot? {
         guard !candidates.isEmpty else { return nil }
 
+        if let explicitModel = ModelSnapshot.resolveStoredReference(selectedBenchmarkModelReference, in: candidates) {
+            return explicitModel
+        }
+
         if let activeCatalogId = ModelRunner.shared.activeCatalogId,
            let activeModel = ModelSnapshot.resolveStoredReference(activeCatalogId, in: candidates) {
             return activeModel
@@ -1095,12 +1195,32 @@ struct BenchmarkSection: View {
         }
 
         if let validatedCandidate = candidates
+            .filter { !$0.isBuiltInAppleModel && $0.isValidatedRunnable }
+            .min(by: { $0.size < $1.size }) {
+            return validatedCandidate
+        }
+
+        if let validatedCandidate = candidates
             .filter(\.isValidatedRunnable)
             .min(by: { $0.size < $1.size }) {
             return validatedCandidate
         }
 
+        if let installedCandidate = candidates
+            .filter({ !$0.isBuiltInAppleModel })
+            .min(by: { $0.size < $1.size }) {
+            return installedCandidate
+        }
+
         return candidates.min(by: { $0.size < $1.size })
+    }
+
+    private func benchmarkOptionTitle(for model: ModelSnapshot) -> String {
+        if model.isBuiltInAppleModel {
+            return "\(model.displayName) (Apple On-Device)"
+        }
+
+        return model.displayName
     }
 }
 
