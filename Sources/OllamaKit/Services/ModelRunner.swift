@@ -39,10 +39,14 @@ final class ModelRunner: ObservableObject {
         let resolvedGpuLayers = await MainActor.run { gpuLayers ?? AppSettings.shared.gpuLayers }
         let resolvedKvCachePreset = await MainActor.run { AppSettings.shared.kvCachePreset.rawValue }
 
-        let (settings, snapshot) = await MainActor.run {
-            let s = AppSettings.shared
-            let snap = await ModelStorage.shared.snapshot(name: catalogId)
-            return (s, snap)
+        let snapshot = await ModelStorage.shared.snapshot(name: catalogId)
+        let (settings, backendKind, isValidated, validationSummary) = await MainActor.run {
+            (
+                AppSettings.shared,
+                snapshot?.backendKind,
+                snapshot?.isValidatedRunnable,
+                snapshot?.validationSummary
+            )
         }
         await MainActor.run {
             AppLogStore.shared.record(
@@ -58,12 +62,12 @@ final class ModelRunner: ObservableObject {
             )
         }
         if let snapshot = snapshot,
-           snapshot.backendKind == .ggufLlama,
-           !snapshot.isValidatedRunnable
+           backendKind == .ggufLlama,
+           !(isValidated ?? false)
         {
             let refreshedSnapshot = await ModelStorage.shared.validateModel(catalogId: snapshot.catalogId) ?? snapshot
-            let isRunnable = await MainActor.run { refreshedSnapshot.isValidatedRunnable }
-            guard isRunnable else {
+            let refreshedIsRunnable = await MainActor.run { refreshedSnapshot.isValidatedRunnable }
+            guard refreshedIsRunnable else {
                 let summary = await MainActor.run { refreshedSnapshot.validationSummary }
                 throw ModelError.backendUnavailable(
                     summary ?? "This GGUF model failed validation on this device and cannot be loaded for chat."
