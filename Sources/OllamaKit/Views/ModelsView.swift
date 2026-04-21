@@ -92,7 +92,7 @@ struct ModelsView: View {
         }
         .navigationTitle("Models")
         .sheet(isPresented: $showingSearch) {
-            ModelSearchSheet()
+            ModelsBrowserSheet()
         }
         .fileImporter(
             isPresented: $showingImporter,
