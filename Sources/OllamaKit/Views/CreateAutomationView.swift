@@ -732,7 +732,7 @@ private enum FlexibleStringValue: Decodable {
     }
 }
 
-struct AutomationPreviewCard: View {
+private struct AutomationPreviewCard: View {
     let automation: ParsedAutomation
     let rawPlanJSON: String
     let errorMessage: String?
