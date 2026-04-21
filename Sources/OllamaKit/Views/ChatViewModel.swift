@@ -16,7 +16,7 @@ final class ChatViewModel: ObservableObject {
     @Published var generationStartTime: Date?
 
     func sendMessage(_ content: String, in session: ChatSession, context: ModelContext, parameters: ModelParameters? = nil, imageData: [Data]? = nil) async {
-        let actualParameters = parameters ?? ModelParameters.appDefault
+        let actualParameters = parameters ?? await MainActor.run { ModelParameters.appDefault }
         lastSentMessage = content
         guard let model = currentModel else {
             AppLogStore.shared.record(

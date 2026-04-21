@@ -54,15 +54,24 @@ struct SettingsView: View {
                         HuggingFaceSettingsSection(settings: settings)
                     }
 
-                    SurfaceSectionCard(title: "Interface") {
+                    SurfaceSectionCard(title: "Interface", icon: "paintpalette") {
                         InterfaceSettingsSection(settings: settings)
                     }
 
                     SurfaceSectionCard(
                         title: "App Debug Logs",
+                        icon: "ant.fill",
                         footer: "Client-side app events only (tab switches, chat send/receive, runtime errors). Server/API logs remain in the Server tab."
                     ) {
                         AppDebugLogsSection()
+                    }
+
+                    SurfaceSectionCard(
+                        title: "App Activity Logs",
+                        icon: "list.bullet.rectangle.portrait",
+                        footer: "Includes chat and model runtime events. Server/API logs remain in the Server panel."
+                    ) {
+                        AppActivityLogsSection()
                     }
 
                     SurfaceSectionCard(
@@ -79,21 +88,8 @@ struct SettingsView: View {
                         BenchmarkSection()
                     }
 
-                    SurfaceSectionCard(title: "Data Management") {
-                    SurfaceSectionCard(title: "Interface", icon: "paintpalette") {
-                        InterfaceSettingsSection(settings: settings)
-                    }
-
                     SurfaceSectionCard(title: "Data Management", icon: "externaldrive") {
                         DataManagementSection()
-                    }
-
-                    SurfaceSectionCard(
-                        title: "App Activity Logs",
-                        icon: "list.bullet.rectangle.portrait",
-                        footer: "Includes chat and model runtime events. Server/API logs remain in the Server panel."
-                    ) {
-                        AppActivityLogsSection()
                     }
 
                     SurfaceSectionCard {
@@ -791,6 +787,13 @@ struct AppDebugLogsSection: View {
         Array(logStore.entries.suffix(60).reversed())
     }
 
+    private var exportedLogText: String {
+        recentEntries.map { entry in
+            let timestamp = ISO8601DateFormatter().string(from: entry.timestamp)
+            return "[\(timestamp)] [\(entry.level.rawValue.uppercased())] [\(entry.category.rawValue)] \(entry.title)\n\(entry.message)"
+        }.joined(separator: "\n\n")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -802,12 +805,33 @@ struct AppDebugLogsSection: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Clear") {
-                    logStore.clear()
-                    HapticManager.impact(.light)
+
+                HStack(spacing: 12) {
+                    Button("Copy") {
+                        UIPasteboard.general.string = exportedLogText
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                    .disabled(recentEntries.isEmpty)
+
+                    ShareLink(
+                        item: exportedLogText,
+                        subject: Text("OllamaKit App Debug Logs"),
+                        message: Text("Exported app debug logs from OllamaKit.")
+                    ) {
+                        Text("Export")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .disabled(recentEntries.isEmpty)
+
+                    Button("Clear") {
+                        logStore.clear()
+                        HapticManager.impact(.light)
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.red)
                 }
-                .font(.system(size: 13, weight: .semibold))
-                .buttonStyle(.bordered)
             }
             .padding(.vertical, 12)
 

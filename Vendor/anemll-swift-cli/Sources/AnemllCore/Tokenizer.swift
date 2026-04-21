@@ -182,7 +182,8 @@ public final class Tokenizer: @unchecked Sendable {
                         "falcon": "</s>",
                         "chatglm": "</s>",
                         "gemma": "<end_of_turn>",
-                        "gemma3": "<end_of_turn>"
+                        "gemma3": "<end_of_turn>",
+                        "gemma4": "<end_of_turn>"
                     ]
                     
                     if let templateToken = eosTokenMap[template] {
@@ -216,7 +217,8 @@ public final class Tokenizer: @unchecked Sendable {
                         "falcon": "<s>",
                         "chatglm": "<s>",
                         "gemma": "<bos>",
-                        "gemma3": "<bos>"
+                        "gemma3": "<bos>",
+                        "gemma4": "<bos>"
                     ]
                     
                     if let templateToken = bosTokenMap[template] {
@@ -250,7 +252,8 @@ public final class Tokenizer: @unchecked Sendable {
                         "falcon": "<pad>",
                         "chatglm": "<pad>",
                         "gemma": "<pad>",
-                        "gemma3": "<pad>"
+                        "gemma3": "<pad>",
+                        "gemma4": "<pad>"
                     ]
                     
                     if let templateToken = padTokenMap[template] {
@@ -393,14 +396,14 @@ public final class Tokenizer: @unchecked Sendable {
 
                 let formattedPrompt: String
                 switch templateName.lowercased() {
-                case "gemma", "gemma3":
+                case "gemma", "gemma3", "gemma4":
                     // Gemma format: <bos><start_of_turn>role\n{content}<end_of_turn>\n...
-                    // Note: Gemma3 doesn't support "system" role - it uses "model" for system messages
+                    // Note: Gemma3/Gemma4 don't support "system" role - it uses "model" for system messages
                     var prompt = "<bos>"
                     for message in messagesArray {
                         let role = message["role"] as? String ?? "user"
                         let content = message["content"] as? String ?? ""
-                        // Map both "assistant" and "system" to "model" for Gemma3
+                        // Map both "assistant" and "system" to "model" for Gemma family
                         let gemmaRole = (role == "assistant" || role == "system") ? "model" : role
                         prompt += "<start_of_turn>\(gemmaRole)\n\(content)<end_of_turn>\n"
                     }

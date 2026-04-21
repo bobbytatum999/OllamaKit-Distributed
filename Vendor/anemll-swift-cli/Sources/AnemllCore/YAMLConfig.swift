@@ -274,6 +274,14 @@ public struct YAMLConfig: Sendable {
             if let sw = params["sliding_window"] as? Int {
                 slidingWindow = sw
                 print("Sliding window from meta.yaml: \(sw)")
+            } else if modelPrefix.lowercased().hasPrefix("gemma4") {
+                let contextLength = params["context_length"] as? Int ?? 2048
+                if contextLength > 512 {
+                    slidingWindow = 512
+                    print("Gemma4 detected with context > 512, defaulting sliding_window to 512")
+                } else {
+                    slidingWindow = nil
+                }
             } else if modelPrefix.lowercased().hasPrefix("gemma3") {
                 let contextLength = params["context_length"] as? Int ?? 2048
                 if contextLength > 512 {

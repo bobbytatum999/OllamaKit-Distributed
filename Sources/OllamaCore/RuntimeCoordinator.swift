@@ -754,6 +754,7 @@ final class CoreMLPackageBackend: InferenceBackend, @unchecked Sendable {
     private func templateName(for modelPrefix: String) -> String {
         let normalized = modelPrefix.trimmedForLookup.lowercased()
 
+        if normalized.contains("gemma4") { return "gemma4" }
         if normalized.contains("gemma3") { return "gemma3" }
         if normalized.contains("gemma") { return "gemma" }
         if normalized.contains("qwen") { return "qwen" }

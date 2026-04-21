@@ -743,8 +743,10 @@ final class ServerManager: @unchecked Sendable {
 
         Task {
             let models = await serverModels()
-            let modelDisplayNames = await MainActor.run { models.map { $0.displayName } }
-            guard let modelIndex = models.indices.first(where: { models[$0].catalogId == name || modelDisplayNames[$0] == name }) else {
+            let (modelCatalogIds, modelDisplayNames) = await MainActor.run {
+                (models.map { $0.catalogId }, models.map { $0.displayName })
+            }
+            guard let modelIndex = modelCatalogIds.indices.first(where: { modelCatalogIds[$0] == name || modelDisplayNames[$0] == name }) else {
                 await sendErrorResponse(status: 404, message: "model not found", on: connection, requestID: requestID)
                 return
             }
