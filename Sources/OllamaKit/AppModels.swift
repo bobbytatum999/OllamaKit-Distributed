@@ -301,58 +301,6 @@ final class ServerLogStore: ObservableObject {
     }
 }
 
-enum AppLogLevel: String, Codable, CaseIterable, Identifiable {
-    case debug
-    case info
-    case warning
-    case error
-
-    var id: String { rawValue }
-}
-
-enum AppLogCategory: String, Codable, CaseIterable, Identifiable {
-    case app
-    case chat
-    case model
-    case modelsCatalog = "models_catalog"
-    case huggingFace = "huggingface"
-    case settings
-
-    var id: String { rawValue }
-}
-
-struct AppLogEntry: Identifiable, Hashable, Codable, Sendable {
-    let id: UUID
-    let timestamp: Date
-    let level: AppLogLevel
-    let category: AppLogCategory
-    let title: String
-    let message: String
-    let metadata: [String: String]
-    let body: String?
-
-    init(
-        id: UUID = UUID(),
-        timestamp: Date = .now,
-        level: AppLogLevel = .info,
-        category: AppLogCategory,
-        title: String,
-        message: String,
-        metadata: [String: String] = [:],
-        body: String? = nil
-    ) {
-        self.id = id
-        self.timestamp = timestamp
-        self.level = level
-        self.category = category
-        self.title = title
-        self.message = message
-        self.metadata = metadata
-        self.body = body?.nonEmpty
-    }
-}
-
-
 @MainActor
 final class AppLogStore: ObservableObject {
     static let shared = AppLogStore()
